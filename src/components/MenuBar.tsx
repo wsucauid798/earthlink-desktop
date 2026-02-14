@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ChevronDown,
   Sun,
   Moon,
   Monitor,
@@ -18,16 +17,15 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Map,
-  Box,
-  Layers,
   Eye,
   EyeOff,
   LayoutPanelLeft,
   PanelBottom,
   PanelRight,
+  Palette,
   Globe,
   Check,
+  ChevronRight,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -46,6 +44,8 @@ interface MenuItemDef {
   checked?: boolean;
   disabled?: boolean;
   separator?: false;
+  /** Nested submenu items */
+  submenu?: MenuItem[];
 }
 
 interface MenuSeparator {
@@ -64,8 +64,6 @@ interface MenuDef {
 export interface MenuBarProps {
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
-  viewMode: "2d" | "2.5d" | "3d";
-  onViewModeChange: (mode: "2d" | "2.5d" | "3d") => void;
   showExplorer: boolean;
   onToggleExplorer: () => void;
   showInspector: boolean;
@@ -86,15 +84,6 @@ function themeIcon(mode: ThemeMode) {
       return <Monitor size={ICON_SIZE} />;
     case "auto":
       return <Clock size={ICON_SIZE} />;
-  }
-}
-
-function viewModeLabel(mode: string) {
-  switch (mode) {
-    case "2d": return "2D";
-    case "2.5d": return "2.5D";
-    case "3d": return "3D";
-    default: return mode;
   }
 }
 
@@ -200,13 +189,109 @@ function ConnectDialog({
   );
 }
 
+/* ----- Reusable menu button (used by menu items and submenu flyouts) ----- */
+
+function MenuButton({ item, onClick }: { item: MenuItemDef; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center w-full gap-2.5 px-3 py-1.5 text-left transition-colors cursor-default rounded-sm"
+      style={{
+        color: item.disabled ? "var(--el-text-faint)" : "var(--el-text)",
+        opacity: item.disabled ? 0.5 : 1,
+      }}
+      onMouseEnter={(e) => {
+        if (!item.disabled) e.currentTarget.style.background = "var(--el-bg-hover)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      <span className="w-4 flex items-center justify-center shrink-0" style={{ color: "var(--el-text-muted)" }}>
+        {item.checked !== undefined ? (
+          item.checked ? <Check size={12} style={{ color: "var(--el-accent)" }} /> : null
+        ) : (
+          item.icon
+        )}
+      </span>
+      <span className="flex-1">{item.label}</span>
+      {item.shortcut && (
+        <span className="ml-4 text-[10px]" style={{ color: "var(--el-text-faint)" }}>
+          {item.shortcut}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/* ----- Submenu item with flyout ----- */
+
+function SubmenuItem({
+  item,
+  onItemClick,
+}: {
+  item: MenuItemDef;
+  onItemClick: (item: MenuItemDef) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <div
+        className="flex items-center w-full gap-2.5 px-3 py-1.5 text-left transition-colors cursor-default rounded-sm"
+        style={{
+          color: "var(--el-text)",
+          background: open ? "var(--el-bg-hover)" : "transparent",
+        }}
+      >
+        <span className="w-4 flex items-center justify-center shrink-0" style={{ color: "var(--el-text-muted)" }}>
+          {item.icon}
+        </span>
+        <span className="flex-1">{item.label}</span>
+        <ChevronRight size={10} style={{ color: "var(--el-text-faint)" }} />
+      </div>
+
+      {/* Flyout submenu */}
+      {open && item.submenu && (
+        <div
+          className="absolute left-full top-0 z-50 min-w-44 py-1 rounded-lg"
+          style={{
+            background: "var(--el-bg-panel)",
+            border: "1px solid var(--el-border-card)",
+            boxShadow: "var(--el-shadow-lg)",
+            marginLeft: 2,
+          }}
+        >
+          {item.submenu.map((sub, sIdx) =>
+            "separator" in sub && sub.separator ? (
+              <div
+                key={sIdx}
+                className="my-1 mx-2"
+                style={{ borderBottom: "1px solid var(--el-border-subtle)" }}
+              />
+            ) : (
+              <MenuButton
+                key={sIdx}
+                item={sub as MenuItemDef}
+                onClick={() => onItemClick(sub as MenuItemDef)}
+              />
+            ),
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ----- Component ----- */
 
 export default function MenuBar({
   themeMode,
   onThemeChange,
-  viewMode,
-  onViewModeChange,
   showExplorer,
   onToggleExplorer,
   showInspector,
@@ -289,47 +374,34 @@ export default function MenuBar({
         },
         { separator: true },
         {
-          label: "2D View",
-          icon: <Map size={ICON_SIZE} />,
-          checked: viewMode === "2d",
-          action: () => onViewModeChange("2d"),
-        },
-        {
-          label: "2.5D View",
-          icon: <Layers size={ICON_SIZE} />,
-          checked: viewMode === "2.5d",
-          action: () => onViewModeChange("2.5d"),
-        },
-        {
-          label: "3D View",
-          icon: <Box size={ICON_SIZE} />,
-          checked: viewMode === "3d",
-          action: () => onViewModeChange("3d"),
-        },
-        { separator: true },
-        {
-          label: "Light",
-          icon: <Sun size={ICON_SIZE} />,
-          checked: themeMode === "light",
-          action: () => onThemeChange("light"),
-        },
-        {
-          label: "Dark",
-          icon: <Moon size={ICON_SIZE} />,
-          checked: themeMode === "dark",
-          action: () => onThemeChange("dark"),
-        },
-        {
-          label: "System",
-          icon: <Monitor size={ICON_SIZE} />,
-          checked: themeMode === "system",
-          action: () => onThemeChange("system"),
-        },
-        {
-          label: "Auto (Time of Day)",
-          icon: <Clock size={ICON_SIZE} />,
-          checked: themeMode === "auto",
-          action: () => onThemeChange("auto"),
+          label: "Appearance",
+          icon: <Palette size={ICON_SIZE} />,
+          submenu: [
+            {
+              label: "Light",
+              icon: <Sun size={ICON_SIZE} />,
+              checked: themeMode === "light",
+              action: () => onThemeChange("light"),
+            },
+            {
+              label: "Dark",
+              icon: <Moon size={ICON_SIZE} />,
+              checked: themeMode === "dark",
+              action: () => onThemeChange("dark"),
+            },
+            {
+              label: "System",
+              icon: <Monitor size={ICON_SIZE} />,
+              checked: themeMode === "system",
+              action: () => onThemeChange("system"),
+            },
+            {
+              label: "Auto (Time of Day)",
+              icon: <Clock size={ICON_SIZE} />,
+              checked: themeMode === "auto",
+              action: () => onThemeChange("auto"),
+            },
+          ],
         },
       ],
     },
@@ -406,36 +478,8 @@ export default function MenuBar({
         }}
         data-tauri-drag-region
       >
-        {/* App brand */}
-        <div className="flex items-center gap-2 px-4 shrink-0">
-          <div
-            className="flex items-center justify-center rounded-md"
-            style={{
-              width: 22,
-              height: 22,
-              background: "var(--el-accent)",
-            }}
-          >
-            <Globe size={13} style={{ color: "var(--el-text-on-accent)" }} />
-          </div>
-          <span
-            className="text-xs font-bold tracking-wide"
-            style={{ color: "var(--el-text)" }}
-          >
-            EarthLink
-          </span>
-        </div>
-
-        {/* Divider */}
-        <div
-          className="h-4 mx-1 shrink-0"
-          style={{
-            width: 1,
-            background: "var(--el-border)",
-          }}
-        />
-
-        {/* Menus */}
+        {/* Menus — no duplicate brand, the title bar already shows EarthLink */}
+        <div className="pl-2" />
         {menus.map((menu, idx) => (
           <div key={menu.label} className="relative">
             <button
@@ -468,46 +512,18 @@ export default function MenuBar({
                       className="my-1 mx-2"
                       style={{ borderBottom: "1px solid var(--el-border-subtle)" }}
                     />
-                  ) : (
-                    <button
+                  ) : (item as MenuItemDef).submenu ? (
+                    <SubmenuItem
                       key={iIdx}
+                      item={item as MenuItemDef}
+                      onItemClick={handleItemClick}
+                    />
+                  ) : (
+                    <MenuButton
+                      key={iIdx}
+                      item={item as MenuItemDef}
                       onClick={() => handleItemClick(item as MenuItemDef)}
-                      className="flex items-center w-full gap-2.5 px-3 py-1.5 text-left transition-colors cursor-default rounded-sm"
-                      style={{
-                        color: (item as MenuItemDef).disabled ? "var(--el-text-faint)" : "var(--el-text)",
-                        opacity: (item as MenuItemDef).disabled ? 0.5 : 1,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!(item as MenuItemDef).disabled) {
-                          e.currentTarget.style.background = "var(--el-bg-hover)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      <span
-                        className="w-4 flex items-center justify-center shrink-0"
-                        style={{ color: "var(--el-text-muted)" }}
-                      >
-                        {(item as MenuItemDef).checked !== undefined ? (
-                          (item as MenuItemDef).checked ? (
-                            <Check size={12} style={{ color: "var(--el-accent)" }} />
-                          ) : null
-                        ) : (
-                          (item as MenuItemDef).icon
-                        )}
-                      </span>
-                      <span className="flex-1">{(item as MenuItemDef).label}</span>
-                      {(item as MenuItemDef).shortcut && (
-                        <span
-                          className="ml-4 text-[10px]"
-                          style={{ color: "var(--el-text-faint)" }}
-                        >
-                          {(item as MenuItemDef).shortcut}
-                        </span>
-                      )}
-                    </button>
+                    />
                   ),
                 )}
               </div>
@@ -515,51 +531,8 @@ export default function MenuBar({
           </div>
         ))}
 
-        {/* Right side — view mode + theme toggle */}
-        <div className="ml-auto flex items-center gap-2 px-3">
-          {/* View mode indicator */}
-          <div
-            className="flex items-center rounded-md overflow-hidden"
-            style={{
-              border: "1px solid var(--el-border-card)",
-            }}
-          >
-            {(["2d", "2.5d", "3d"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => onViewModeChange(m)}
-                className="px-2 py-0.5 text-[10px] font-semibold cursor-default transition-colors"
-                style={{
-                  background: viewMode === m ? "var(--el-accent-soft)" : "transparent",
-                  color: viewMode === m ? "var(--el-text-accent)" : "var(--el-text-faint)",
-                }}
-              >
-                {viewModeLabel(m)}
-              </button>
-            ))}
-          </div>
-
-          {/* Theme toggle */}
-          <button
-            onClick={() => {
-              const modes: ThemeMode[] = ["light", "dark", "system", "auto"];
-              const next = modes[(modes.indexOf(themeMode) + 1) % modes.length];
-              onThemeChange(next);
-            }}
-            className="flex items-center gap-1 px-2 py-1 rounded-md transition-colors cursor-default"
-            title={`Theme: ${themeMode}`}
-            style={{ color: "var(--el-text-muted)" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--el-bg-hover)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-            }}
-          >
-            {themeIcon(themeMode)}
-            <ChevronDown size={10} />
-          </button>
-        </div>
+        {/* Right side spacer for Tauri window controls */}
+        <div className="ml-auto" />
       </div>
 
       {/* Connect dialog overlay */}

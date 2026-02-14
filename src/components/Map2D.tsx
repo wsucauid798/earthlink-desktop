@@ -12,25 +12,26 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { ZoomIn, ZoomOut, LocateFixed, Compass, Layers, Map as MapIcon } from "lucide-react";
+import { ZoomIn, ZoomOut, LocateFixed, Compass, Map as MapIcon, Layers, Box } from "lucide-react";
 import { client } from "../api/client";
 import { useWorldStore } from "../store/worldStore";
 import { useSelectionStore } from "../store/selectionStore";
 import { useConnectionStore } from "../store/connectionStore";
 import { useLogStore } from "../store/logStore";
+import { useAgentHistoryStore } from "../store/agentHistoryStore";
+import { useViewModeStore, type ViewMode } from "../store/viewModeStore";
 
-// UK centre
-const UK_CENTER: [number, number] = [-2.5, 54.5];
-const UK_ZOOM = 5.5;
+// Default view — will be overridden once locations are loaded
+const DEFAULT_CENTER: [number, number] = [0, 20];
+const DEFAULT_ZOOM = 2;
+const GLOBE_ZOOM = 1.4; // 3D globe — shows the full Earth, slightly smaller
 
 // OpenFreeMap style (free, no key needed)
 const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 
-interface Map2DProps {
-  viewMode: "2d" | "2.5d" | "3d";
-}
-
-export default function Map2D({ viewMode }: Map2DProps) {
+export default function Map2D() {
+  const viewMode = useViewModeStore((s) => s.viewMode);
+  const setViewMode = useViewModeStore((s) => s.setViewMode);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const locationsLoaded = useRef(false);
@@ -48,17 +49,12 @@ export default function Map2D({ viewMode }: Map2DProps) {
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
-      center: UK_CENTER,
-      zoom: UK_ZOOM,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
       pitch: viewMode === "2.5d" ? 45 : 0,
       bearing: viewMode === "2.5d" ? -15 : 0,
       attributionControl: false,
     });
-
-    map.addControl(
-      new maplibregl.AttributionControl({ compact: true }),
-      "bottom-left",
-    );
 
     mapRef.current = map;
 
@@ -195,6 +191,28 @@ export default function Map2D({ viewMode }: Map2DProps) {
         },
       });
 
+      // Trajectory line for selected agent
+      map.addSource("trajectory", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "trajectory-line",
+        type: "line",
+        source: "trajectory",
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+        },
+        paint: {
+          "line-color": "#ef4444",
+          "line-width": 2,
+          "line-opacity": 0.6,
+          "line-dasharray": [2, 2],
+        },
+      }, "agents-pulse"); // draw under agents
+
       agentSourceReady.current = true;
 
       // --- Click handlers ---
@@ -273,6 +291,19 @@ export default function Map2D({ viewMode }: Map2DProps) {
         if (src) {
           src.setData(geojson);
           locationsLoaded.current = true;
+
+          // Fit map to the loaded data
+          if (geojson.features.length > 0) {
+            const bounds = new maplibregl.LngLatBounds();
+            for (const feat of geojson.features) {
+              if (feat.geometry.type === "Point") {
+                const [lng, lat] = (feat.geometry as GeoJSON.Point).coordinates;
+                bounds.extend([lng, lat]);
+              }
+            }
+            map.fitBounds(bounds, { padding: 40, duration: 1200 });
+          }
+
           useLogStore.getState().addConsole(
             "success",
             `${geojson.features.length.toLocaleString()} locations rendered on map`,
@@ -339,19 +370,44 @@ export default function Map2D({ viewMode }: Map2DProps) {
     }
   }, [agents]);
 
-  // --- View mode switching (2D vs 2.5D) ---
+  // --- View mode switching (2D / 2.5D / 3D globe) ---
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
 
-    const pitch = viewMode === "2.5d" ? 45 : 0;
-    const bearing = viewMode === "2.5d" ? -15 : 0;
+    const is25d = viewMode === "2.5d";
+    const is3d = viewMode === "3d";
 
-    map.easeTo({
-      pitch,
-      bearing,
-      duration: 800,
-    });
+    // Globe projection for 3D, mercator for 2D/2.5D
+    if (is3d) {
+      map.setProjection({ type: "globe" });
+    } else {
+      map.setProjection({ type: "mercator" });
+    }
+
+    // In 2.5D, enforce a minimum zoom so the map tiles always fill the
+    // viewport — prevents the void from showing at the horizon.
+    map.setMinZoom(is25d ? 3 : 0);
+
+    if (is3d) {
+      // Zoom out to show the full globe
+      map.easeTo({
+        zoom: GLOBE_ZOOM,
+        pitch: 0,
+        bearing: 0,
+        duration: 800,
+      });
+    } else {
+      const minZoom = is25d ? 3 : 0;
+      const targetZoom = map.getZoom() < minZoom ? minZoom : undefined;
+
+      map.easeTo({
+        pitch: is25d ? 45 : 0,
+        bearing: is25d ? -15 : 0,
+        ...(targetZoom !== undefined ? { zoom: targetZoom } : {}),
+        duration: 800,
+      });
+    }
   }, [viewMode]);
 
   // --- Fly to selected entity ---
@@ -382,15 +438,69 @@ export default function Map2D({ viewMode }: Map2DProps) {
     }
   }, [selectedKind, selectedId, locationDetail, agentDetail]);
 
+  // --- Trajectory line for selected agent ---
+  const selectedAgentId = useSelectionStore((s) => s.kind === "agent" ? s.id : null);
+  const trajectorySnapshots = useAgentHistoryStore((s) =>
+    selectedAgentId ? s.histories[selectedAgentId]?.snapshots : undefined,
+  );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const src = map.getSource("trajectory") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+
+    if (!selectedAgentId || !trajectorySnapshots || trajectorySnapshots.length < 2) {
+      src.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+
+    // Build a LineString from the agent's movement history
+    const coords: [number, number][] = [];
+    for (const snap of trajectorySnapshots) {
+      const c = locationLookup.get(snap.toLocationId);
+      if (c) {
+        // Avoid duplicates (agent stayed at same location)
+        const last = coords[coords.length - 1];
+        if (!last || last[0] !== c[0] || last[1] !== c[1]) {
+          coords.push(c);
+        }
+      }
+    }
+
+    if (coords.length >= 2) {
+      src.setData({
+        type: "FeatureCollection",
+        features: [{
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: coords },
+          properties: {},
+        }],
+      });
+    } else {
+      src.setData({ type: "FeatureCollection", features: [] });
+    }
+  }, [selectedAgentId, trajectorySnapshots]);
+
   // --- Control handlers ---
-  const zoomIn = () => mapRef.current?.zoomIn({ duration: 300 });
-  const zoomOut = () => mapRef.current?.zoomOut({ duration: 300 });
+  const ZOOM_STEP = 0.5;
+  const zoomIn = () => {
+    const map = mapRef.current;
+    if (map) map.zoomTo(map.getZoom() + ZOOM_STEP, { duration: 300 });
+  };
+  const zoomOut = () => {
+    const map = mapRef.current;
+    if (map) map.zoomTo(map.getZoom() - ZOOM_STEP, { duration: 300 });
+  };
   const resetView = () => {
+    const is25d = viewMode === "2.5d";
+    const is3d = viewMode === "3d";
     mapRef.current?.flyTo({
-      center: UK_CENTER,
-      zoom: UK_ZOOM,
-      pitch: viewMode === "2.5d" ? 45 : 0,
-      bearing: viewMode === "2.5d" ? -15 : 0,
+      center: DEFAULT_CENTER,
+      zoom: is3d ? GLOBE_ZOOM : is25d ? Math.max(DEFAULT_ZOOM, 3) : DEFAULT_ZOOM,
+      pitch: is25d ? 45 : 0,
+      bearing: is25d ? -15 : 0,
       duration: 1200,
     });
   };
@@ -408,6 +518,12 @@ export default function Map2D({ viewMode }: Map2DProps) {
     boxShadow: "var(--el-shadow-sm)",
   };
 
+  const viewModes: { key: ViewMode; label: string; icon: React.ReactNode }[] = [
+    { key: "2d", label: "2D", icon: <MapIcon size={11} /> },
+    { key: "2.5d", label: "2.5D", icon: <Layers size={11} /> },
+    { key: "3d", label: "3D", icon: <Box size={11} /> },
+  ];
+
   return (
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full" />
@@ -420,18 +536,31 @@ export default function Map2D({ viewMode }: Map2DProps) {
         <button className={ctrlBtn} style={ctrlStyle} title="North" onClick={resetNorth}><Compass size={14} /></button>
       </div>
 
-      {/* View mode badge — bottom right */}
-      <div
-        className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold z-10"
-        style={{
-          background: "var(--el-bg-panel)",
-          border: "1px solid var(--el-border-card)",
-          color: "var(--el-text-muted)",
-          boxShadow: "var(--el-shadow-sm)",
-        }}
-      >
-        {viewMode === "2.5d" ? <Layers size={12} /> : <MapIcon size={12} />}
-        {viewMode === "2.5d" ? "2.5D Perspective" : "2D Map"}
+      {/* View mode toggle — bottom-right */}
+      <div className="absolute bottom-3 right-3 z-10">
+        <div
+          className="flex items-center rounded-md overflow-hidden"
+          style={{
+            background: "var(--el-bg-panel)",
+            border: "1px solid var(--el-border-card)",
+            boxShadow: "var(--el-shadow-sm)",
+          }}
+        >
+          {viewModes.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setViewMode(m.key)}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-semibold cursor-default transition-colors"
+              style={{
+                background: viewMode === m.key ? "var(--el-accent-soft)" : "transparent",
+                color: viewMode === m.key ? "var(--el-text-accent)" : "var(--el-text-faint)",
+              }}
+            >
+              {m.icon}
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -440,8 +569,9 @@ export default function Map2D({ viewMode }: Map2DProps) {
 /**
  * Module-level location coordinate lookup.
  * Built once when locations GeoJSON is loaded, used to plot agents.
+ * Exported so Map3D can share the same lookup.
  */
-const locationLookup = new Map<number, [number, number]>();
+export const locationLookup = new Map<number, [number, number]>();
 
 /**
  * Call this after loading the locations GeoJSON to populate the lookup.

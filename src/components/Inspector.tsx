@@ -24,8 +24,17 @@ import {
   Target,
   Send,
   Loader,
+  ListChecks,
+  FileText,
+  Gauge,
+  Shield,
+  Route,
 } from "lucide-react";
 import { useSelectionStore } from "../store/selectionStore";
+import { useConnectionStore } from "../store/connectionStore";
+import { useViewportStore } from "../store/viewportStore";
+import { useAgentHistoryStore } from "../store/agentHistoryStore";
+import Sparkline from "./Sparkline";
 import type { AgentDetail, Location, Weather, AgentAnswer } from "../api/types";
 
 /* ---------- Collapsible card section ---------- */
@@ -85,26 +94,16 @@ function Prop({ icon, label, value }: { icon?: React.ReactNode; label: string; v
 /* ---------- Empty state ---------- */
 
 function EmptyState() {
+  const connected = useConnectionStore((s) => s.connected);
+
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-12 px-6">
-      <div
-        className="flex items-center justify-center rounded-full"
-        style={{
-          width: 48,
-          height: 48,
-          background: "var(--el-bg-badge)",
-        }}
-      >
-        <Eye size={20} style={{ color: "var(--el-text-faint)" }} />
-      </div>
-      <div className="text-center">
-        <div className="text-xs font-medium" style={{ color: "var(--el-text-muted)" }}>
-          Nothing selected
-        </div>
-        <div className="text-[10px] mt-1" style={{ color: "var(--el-text-faint)" }}>
-          Select a location or agent in the explorer or map to inspect it.
-        </div>
-      </div>
+    <div className="px-3 py-4">
+      <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
+        {connected
+          ? "Select a location or agent on the map."
+          : "Awaiting connection"
+        }
+      </span>
     </div>
   );
 }
@@ -185,6 +184,46 @@ function LocationDetail({ loc, weather }: { loc: Location; weather: Weather | nu
   );
 }
 
+/* ---------- Viewport quick actions ---------- */
+
+function ViewportActions({ agentId, agentName }: { agentId: string; agentName: string }) {
+  const openTab = useViewportStore((s) => s.openTab);
+
+  const actions = [
+    { kind: "analytics" as const, icon: <BarChart3 size={11} />, label: "Analytics" },
+    { kind: "decisions" as const, icon: <ListChecks size={11} />, label: "Decisions" },
+    { kind: "traces" as const, icon: <FileText size={11} />, label: "Traces" },
+  ];
+
+  return (
+    <div className="flex items-center gap-1.5 px-3 pb-3">
+      {actions.map((a) => (
+        <button
+          key={a.kind}
+          onClick={() => openTab(a.kind, agentId, agentName)}
+          className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium cursor-default transition-colors"
+          style={{
+            background: "var(--el-bg-input)",
+            border: "1px solid var(--el-border-card)",
+            color: "var(--el-text-muted)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "var(--el-accent)";
+            e.currentTarget.style.color = "var(--el-text-accent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "var(--el-border-card)";
+            e.currentTarget.style.color = "var(--el-text-muted)";
+          }}
+        >
+          {a.icon}
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ---------- Agent detail ---------- */
 
 function AgentDetailView({
@@ -255,6 +294,9 @@ function AgentDetailView({
           />
         </div>
       </div>
+
+      {/* Quick actions — open views in the center viewport */}
+      <ViewportActions agentId={agent.id} agentName={agent.name} />
 
       {/* Ask agent input */}
       <div className="px-3 pb-3">
@@ -343,7 +385,91 @@ function AgentDetailView({
         <Prop label="Known Conditions" value={String(Object.keys(agent.known_conditions).length)} />
         <Prop label="Visited Places" value={String(agent.visited_places.length)} />
       </CardSection>
+
+      {/* ----- New research sections ----- */}
+      <AgentUtilitySection agentId={agent.id} />
+      <AgentExplorationSection agent={agent} />
+      <AgentBeliefSection />
+      <AgentReadinessSection />
     </>
+  );
+}
+
+/* ---------- Utility section (real-time from history) ---------- */
+
+function AgentUtilitySection({ agentId }: { agentId: string }) {
+  const history = useAgentHistoryStore((s) => s.histories[agentId]);
+  const snaps = history?.snapshots ?? [];
+
+  if (snaps.length === 0) {
+    return (
+      <CardSection title="Utility" icon={<Gauge size={10} />} defaultOpen={false}>
+        <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
+          Awaiting tick data...
+        </div>
+      </CardSection>
+    );
+  }
+
+  const latest = snaps[snaps.length - 1];
+  const cumReward = snaps.reduce((s, x) => s + x.reward, 0);
+  const avgReward = cumReward / snaps.length;
+
+  return (
+    <CardSection title="Utility" icon={<Gauge size={10} />}>
+      <Prop label="Last Reward" value={latest.reward >= 0 ? `+${latest.reward.toFixed(2)}` : latest.reward.toFixed(2)} />
+      <Prop label="Cumulative" value={cumReward.toFixed(2)} />
+      <Prop label="Avg / tick" value={avgReward.toFixed(3)} />
+      <Prop label="Q-Value" value={latest.qValue.toFixed(3)} />
+      <div className="mt-1">
+        <Sparkline data={snaps.map((s) => s.reward)} width={200} height={28} color="var(--el-success)" />
+      </div>
+    </CardSection>
+  );
+}
+
+/* ---------- Exploration progress ---------- */
+
+function AgentExplorationSection({ agent }: { agent: AgentDetail }) {
+  const totalLocations = agent.visited_places.length;
+  // Exploration breadth (unique places) — we don't know total world locations from agent detail
+  // but we can show raw count and the exploration pattern
+  const topScores = agent.top_locations.slice(0, 5).map((tl) => tl.score);
+
+  return (
+    <CardSection title="Exploration" icon={<Route size={10} />}>
+      <Prop label="Unique Places" value={String(totalLocations)} />
+      <Prop label="Top-5 Rated" value={topScores.length > 0 ? topScores.map((s) => s.toFixed(1)).join(", ") : "—"} />
+      {topScores.length >= 2 && (
+        <div className="mt-1">
+          <Sparkline data={topScores} width={200} height={24} color="var(--el-warning)" />
+        </div>
+      )}
+    </CardSection>
+  );
+}
+
+/* ---------- Belief confidence (placeholder) ---------- */
+
+function AgentBeliefSection() {
+  return (
+    <CardSection title="Belief Confidence" icon={<Shield size={10} />} defaultOpen={false}>
+      <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
+        Belief confidence tracking is pending server-side support. This section will show per-location belief strength, confidence intervals, and staleness indicators.
+      </div>
+    </CardSection>
+  );
+}
+
+/* ---------- Readiness metrics (placeholder) ---------- */
+
+function AgentReadinessSection() {
+  return (
+    <CardSection title="Readiness" icon={<Gauge size={10} />} defaultOpen={false}>
+      <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
+        Readiness metrics are pending server-side support. This section will show archetype classification, task readiness score, and resource sufficiency indicators.
+      </div>
+    </CardSection>
   );
 }
 

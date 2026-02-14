@@ -1,8 +1,8 @@
 /**
  * Connection store — manages server connection lifecycle.
  *
- * Handles: server URL, REST client, WebSocket, connection status,
- * initial world state fetch, and tick streaming.
+ * Auto-connects on first use. Retries with exponential backoff
+ * on failure. Manual connect only exposed as a last resort.
  */
 
 import { create } from "zustand";
@@ -10,7 +10,10 @@ import { client } from "../api/client";
 import { worldWs, type WsStatus } from "../api/ws";
 import { useWorldStore } from "./worldStore";
 import { useLogStore } from "./logStore";
+import { useAgentHistoryStore } from "./agentHistoryStore";
 import type { TickEvent } from "../api/types";
+
+const RETRY_DELAYS = [2_000, 4_000, 8_000, 15_000, 30_000]; // escalating backoff
 
 export interface ConnectionState {
   serverUrl: string;
@@ -19,11 +22,19 @@ export interface ConnectionState {
   serverVersion: string | null;
   error: string | null;
   connecting: boolean;
+  /** How many auto-connect attempts have been made */
+  retryCount: number;
+  /** Whether auto-retry has been exhausted (manual connect available) */
+  retriesExhausted: boolean;
 
   setServerUrl: (url: string) => void;
   connect: () => Promise<void>;
   disconnect: () => void;
+  /** Called once on app boot — kicks off auto-connect */
+  autoConnect: () => void;
 }
+
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   serverUrl: "http://localhost:8000",
@@ -32,25 +43,50 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   serverVersion: null,
   error: null,
   connecting: false,
+  retryCount: 0,
+  retriesExhausted: false,
 
   setServerUrl: (url) => set({ serverUrl: url }),
 
+  autoConnect: () => {
+    // Start the auto-connect loop
+    get().connect();
+  },
+
   connect: async () => {
-    const { serverUrl } = get();
-    set({ connecting: true, error: null });
+    const { serverUrl, connected } = get();
+    if (connected) return;
+
+    set({ connecting: true, error: null, retriesExhausted: false });
     const log = useLogStore.getState();
-    log.addConsole("info", `Connecting to ${serverUrl}...`);
+    const retryCount = get().retryCount;
+
+    if (retryCount === 0) {
+      log.addConsole("info", `Connecting to ${serverUrl}...`);
+    } else {
+      log.addConsole("info", `Retry ${retryCount}/${RETRY_DELAYS.length}...`);
+    }
 
     // 1. Test REST connection by fetching version
     try {
       client.baseUrl = serverUrl;
       const ver = await client.getVersion();
-      set({ serverVersion: ver.version });
+      set({ serverVersion: ver.version, retryCount: 0 });
       log.addConsole("success", `Server v${ver.version} found`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      set({ connected: false, connecting: false, error: msg });
-      log.addConsole("error", `Connection failed: ${msg}`);
+      set({ connecting: false, error: msg });
+
+      const nextRetry = retryCount + 1;
+      if (nextRetry <= RETRY_DELAYS.length) {
+        const delay = RETRY_DELAYS[Math.min(nextRetry - 1, RETRY_DELAYS.length - 1)];
+        log.addConsole("warning", `Connection failed. Retrying in ${delay / 1000}s...`);
+        set({ retryCount: nextRetry });
+        retryTimer = setTimeout(() => get().connect(), delay);
+      } else {
+        log.addConsole("error", `Connection failed after ${RETRY_DELAYS.length} retries: ${msg}`);
+        set({ retriesExhausted: true, retryCount: 0 });
+      }
       return;
     }
 
@@ -90,6 +126,15 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       onTick: (event: TickEvent) => {
         useWorldStore.getState().handleTick(event);
         log.addTickEvent(event);
+
+        // Record into history store for Analytics/Decisions/Traces
+        const energyMap: Record<string, number> = {};
+        for (const a of useWorldStore.getState().agents) {
+          energyMap[a.id] = a.energy;
+        }
+        useAgentHistoryStore.getState().recordTick(
+          event.tick, event.time, event.agent_events, energyMap,
+        );
       },
       onError: (msg) => {
         log.addConsole("error", `WebSocket: ${msg}`);
@@ -98,16 +143,22 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
     worldWs.connect(serverUrl);
 
-    set({ connected: true, connecting: false });
+    set({ connected: true, connecting: false, retryCount: 0 });
     log.addConsole("success", "Connected to EarthLink server");
   },
 
   disconnect: () => {
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
     worldWs.disconnect();
     set({
       connected: false,
       wsStatus: "disconnected",
       serverVersion: null,
+      retryCount: 0,
+      retriesExhausted: false,
     });
     useLogStore.getState().addConsole("info", "Disconnected from server");
   },

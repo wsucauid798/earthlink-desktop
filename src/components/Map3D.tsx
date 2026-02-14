@@ -1,243 +1,292 @@
 /**
- * Map3D — CesiumJS 3D Globe component.
+ * Map3D — MapLibre GL JS globe projection.
  *
  * Renders the virtual world on a 3D globe:
- * - All locations as billboards/points
- * - All agents as animated entities
+ * - All locations as GeoJSON circles (same styling as Map2D)
+ * - All agents as real-time GeoJSON markers
  * - Click interaction: select location/agent
  * - Fly-to on selection
+ * - Uses MapLibre's `projection: "globe"` for a spherical earth view
  */
 
 import { useEffect, useRef } from "react";
-import * as Cesium from "cesium";
-import "cesium/Build/Cesium/Widgets/widgets.css";
-import { ZoomIn, ZoomOut, LocateFixed, Globe, RotateCcw } from "lucide-react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { ZoomIn, ZoomOut, LocateFixed, Compass, Globe } from "lucide-react";
 import { client } from "../api/client";
 import { useWorldStore } from "../store/worldStore";
 import { useSelectionStore } from "../store/selectionStore";
 import { useConnectionStore } from "../store/connectionStore";
 import { useLogStore } from "../store/logStore";
-import { buildLocationLookup } from "./Map2D";
+import { buildLocationLookup, locationLookup } from "./Map2D";
 
-// UK centre
-const UK_CENTER = Cesium.Cartesian3.fromDegrees(-2.5, 54.5, 2_000_000);
+// Default view — whole earth, data-driven after locations load
+const DEFAULT_CENTER: [number, number] = [0, 20];
+const GLOBE_ZOOM = 2;
 
-// Type colour mapping (matching Map2D)
-const TYPE_COLORS: Record<string, Cesium.Color> = {
-  capital: Cesium.Color.fromCssColorString("#f59e0b"),
-  city: Cesium.Color.fromCssColorString("#3b82f6"),
-  town: Cesium.Color.fromCssColorString("#8b5cf6"),
-  village: Cesium.Color.fromCssColorString("#10b981"),
-};
-const DEFAULT_LOC_COLOR = Cesium.Color.fromCssColorString("#6b7280");
-const AGENT_COLOR = Cesium.Color.fromCssColorString("#ef4444");
+// OpenFreeMap style (free, no key needed)
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 
 export default function Map3D() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const locationsLoadedRef = useRef(false);
-  const locationEntityMap = useRef(new Map<number, Cesium.Entity>());
-  const agentEntityMap = useRef(new Map<string, Cesium.Entity>());
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const locationsLoaded = useRef(false);
+  const agentSourceReady = useRef(false);
 
   const connected = useConnectionStore((s) => s.connected);
   const agents = useWorldStore((s) => s.agents);
   const selectLocation = useSelectionStore((s) => s.selectLocation);
   const selectAgent = useSelectionStore((s) => s.selectAgent);
 
-  // --- Initialize viewer ---
+  // --- Initialise globe map ---
   useEffect(() => {
-    if (!containerRef.current || viewerRef.current) return;
+    if (!containerRef.current || mapRef.current) return;
 
-    // CesiumJS ion token not needed for basic OSM imagery
-    Cesium.Ion.defaultAccessToken = "";
-
-    const viewer = new Cesium.Viewer(containerRef.current, {
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      timeline: false,
-      animation: false,
-      navigationHelpButton: false,
-      fullscreenButton: false,
-      infoBox: false,
-      creditContainer: document.createElement("div"), // hide default credits
-      baseLayer: new Cesium.ImageryLayer(
-        new Cesium.OpenStreetMapImageryProvider({
-          url: "https://tile.openstreetmap.org/",
-        }),
-      ),
-      terrain: undefined,
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: DEFAULT_CENTER,
+      zoom: GLOBE_ZOOM,
+      pitch: 0,
+      bearing: 0,
+      attributionControl: false,
     });
 
-    // Fly to UK
-    viewer.camera.flyTo({
-      destination: UK_CENTER,
-      duration: 0,
-    });
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      "bottom-left",
+    );
 
-    // Dark space background
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#1a1a2e");
-    viewer.scene.globe.enableLighting = true;
+    mapRef.current = map;
 
-    // Click handler
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click: { position: Cesium.Cartesian2 }) => {
-      const picked = viewer.scene.pick(click.position);
-      if (Cesium.defined(picked) && picked.id) {
-        const entity = picked.id as Cesium.Entity;
-        const props = entity.properties;
-        if (props?.entityType?.getValue(Cesium.JulianDate.now()) === "agent") {
-          selectAgent(props.entityId.getValue(Cesium.JulianDate.now()));
-        } else if (props?.entityType?.getValue(Cesium.JulianDate.now()) === "location") {
-          selectLocation(Number(props.entityId.getValue(Cesium.JulianDate.now())));
+    map.on("load", () => {
+      // Enable globe projection after style is loaded
+      map.setProjection({ type: "globe" });
+      // --- Location layers (same styling as Map2D) ---
+
+      map.addSource("locations", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "locations-circle",
+        type: "circle",
+        source: "locations",
+        paint: {
+          "circle-radius": [
+            "interpolate", ["linear"], ["zoom"],
+            4, ["match", ["get", "type"],
+              "capital", 5,
+              "city", 3.5,
+              "town", 2,
+              1.5,
+            ],
+            10, ["match", ["get", "type"],
+              "capital", 10,
+              "city", 7,
+              "town", 5,
+              3.5,
+            ],
+          ],
+          "circle-color": [
+            "match", ["get", "type"],
+            "capital", "#f59e0b",
+            "city", "#3b82f6",
+            "town", "#8b5cf6",
+            "village", "#10b981",
+            "#6b7280",
+          ],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": [
+            "match", ["get", "type"],
+            "capital", "#d97706",
+            "city", "#2563eb",
+            "town", "#7c3aed",
+            "village", "#059669",
+            "#4b5563",
+          ],
+          "circle-opacity": 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: "locations-label",
+        type: "symbol",
+        source: "locations",
+        minzoom: 8,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": ["interpolate", ["linear"], ["zoom"], 8, 9, 12, 12],
+          "text-offset": [0, 1.2],
+          "text-anchor": "top",
+          "text-max-width": 8,
+        },
+        paint: {
+          "text-color": "#374151",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      });
+
+      // --- Agent layers ---
+
+      map.addSource("agents", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.addLayer({
+        id: "agents-circle",
+        type: "circle",
+        source: "agents",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 6, 10, 12],
+          "circle-color": "#ef4444",
+          "circle-stroke-width": 2.5,
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.95,
+        },
+      });
+
+      map.addLayer({
+        id: "agents-pulse",
+        type: "circle",
+        source: "agents",
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 10, 10, 18],
+          "circle-color": "#ef4444",
+          "circle-opacity": 0.15,
+        },
+      }, "agents-circle");
+
+      map.addLayer({
+        id: "agents-label",
+        type: "symbol",
+        source: "agents",
+        minzoom: 7,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": 11,
+          "text-offset": [0, 1.6],
+          "text-anchor": "top",
+          "text-font": ["Open Sans Bold"],
+        },
+        paint: {
+          "text-color": "#ef4444",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 2,
+        },
+      });
+
+      agentSourceReady.current = true;
+
+      // --- Click handlers ---
+
+      map.on("click", "locations-circle", (e) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.id != null) {
+          selectLocation(Number(feat.properties.id));
         }
-      }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      });
 
-    viewerRef.current = viewer;
+      map.on("click", "agents-circle", (e) => {
+        const feat = e.features?.[0];
+        if (feat?.properties?.agent_id) {
+          selectAgent(String(feat.properties.agent_id));
+        }
+      });
+
+      // Cursor changes
+      for (const layer of ["locations-circle", "agents-circle"]) {
+        map.on("mouseenter", layer, () => { map.getCanvas().style.cursor = "pointer"; });
+        map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; });
+      }
+
+      // Location hover popup
+      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+
+      map.on("mouseenter", "locations-circle", (e) => {
+        const feat = e.features?.[0];
+        if (!feat) return;
+        const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [number, number];
+        const { name, type, population } = feat.properties as Record<string, string>;
+        const popStr = population && Number(population) > 0
+          ? `${Number(population).toLocaleString()} pop.`
+          : "";
+        popup
+          .setLngLat(coords)
+          .setHTML(`<strong>${name}</strong><br/><span style="opacity:0.7">${type}${popStr ? " · " + popStr : ""}</span>`)
+          .addTo(map);
+      });
+
+      map.on("mouseleave", "locations-circle", () => { popup.remove(); });
+    });
 
     return () => {
-      handler.destroy();
-      viewer.destroy();
-      viewerRef.current = null;
+      mapRef.current = null;
+      map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Load locations ---
+  // --- Load locations GeoJSON ---
   useEffect(() => {
-    if (!connected || locationsLoadedRef.current) return;
-    const viewer = viewerRef.current;
-    if (!viewer) return;
+    if (!connected || locationsLoaded.current) return;
+    const map = mapRef.current;
+    if (!map) return;
 
     const load = async () => {
       try {
         const geojson = await client.getLocationsGeoJSON();
         buildLocationLookup(geojson);
-
-        for (const feat of geojson.features) {
-          if (feat.geometry.type !== "Point" || !feat.properties) continue;
-          const [lng, lat] = (feat.geometry as GeoJSON.Point).coordinates;
-          const id = feat.properties.id as number;
-          const name = feat.properties.name as string;
-          const type = feat.properties.type as string;
-          const pop = feat.properties.population as number;
-
-          const color = TYPE_COLORS[type] ?? DEFAULT_LOC_COLOR;
-          const size = type === "capital" ? 8 : type === "city" ? 6 : type === "town" ? 4 : 3;
-
-          const entity = viewer.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(lng, lat),
-            point: {
-              pixelSize: size,
-              color: color,
-              outlineColor: Cesium.Color.WHITE.withAlpha(0.6),
-              outlineWidth: 1,
-              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-              scaleByDistance: new Cesium.NearFarScalar(1e4, 1.5, 1e7, 0.5),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-            label: {
-              text: name,
-              font: "11px sans-serif",
-              fillColor: Cesium.Color.WHITE,
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 2,
-              style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-              pixelOffset: new Cesium.Cartesian2(0, -10),
-              scaleByDistance: new Cesium.NearFarScalar(1e4, 1.0, 5e5, 0),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-            properties: {
-              entityType: "location",
-              entityId: String(id),
-              locationType: type,
-              population: pop,
-            },
-          });
-
-          locationEntityMap.current.set(id, entity);
+        const src = map.getSource("locations") as maplibregl.GeoJSONSource | undefined;
+        if (src) {
+          src.setData(geojson);
+          locationsLoaded.current = true;
+          useLogStore.getState().addConsole(
+            "success",
+            `${geojson.features.length.toLocaleString()} locations rendered on 3D globe`,
+          );
         }
-
-        locationsLoadedRef.current = true;
-        useLogStore.getState().addConsole(
-          "success",
-          `${geojson.features.length.toLocaleString()} locations rendered on 3D globe`,
-        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        useLogStore.getState().addConsole("error", `Failed to load 3D locations: ${msg}`);
+        useLogStore.getState().addConsole("error", `Failed to load locations GeoJSON: ${msg}`);
       }
     };
 
-    load();
+    if (map.isStyleLoaded()) {
+      load();
+    } else {
+      map.on("load", load);
+    }
   }, [connected]);
 
   // --- Update agent positions ---
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || agents.length === 0) return;
+    const map = mapRef.current;
+    if (!map || !agentSourceReady.current || agents.length === 0) return;
 
-    const seenIds = new Set<string>();
-
+    const agentFeatures: GeoJSON.Feature[] = [];
     for (const agent of agents) {
-      seenIds.add(agent.id);
-      const existing = agentEntityMap.current.get(agent.id);
-
-      // Get coordinates from the location lookup
-      // We need the lookup from Map2D module — it's module-level so we import the function
-      // and the map is populated. Let's import it differently — we'll build our own from viewer entities.
-      const locEntity = locationEntityMap.current.get(agent.location_id);
-      if (!locEntity?.position) continue;
-
-      const position = locEntity.position.getValue(Cesium.JulianDate.now());
-      if (!position) continue;
-
-      if (existing) {
-        // Update position
-        (existing.position as Cesium.ConstantPositionProperty).setValue(position);
-      } else {
-        // Create new agent entity
-        const entity = viewer.entities.add({
-          position: position,
-          point: {
-            pixelSize: 12,
-            color: AGENT_COLOR,
-            outlineColor: Cesium.Color.WHITE,
-            outlineWidth: 2.5,
-            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-          label: {
-            text: agent.name,
-            font: "bold 12px sans-serif",
-            fillColor: AGENT_COLOR,
-            outlineColor: Cesium.Color.WHITE,
-            outlineWidth: 3,
-            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-            pixelOffset: new Cesium.Cartesian2(0, -14),
-            scaleByDistance: new Cesium.NearFarScalar(1e4, 1.0, 5e5, 0),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-          properties: {
-            entityType: "agent",
-            entityId: agent.id,
-          },
-        });
-        agentEntityMap.current.set(agent.id, entity);
-      }
+      const coord = locationLookup.get(agent.location_id);
+      if (!coord) continue;
+      agentFeatures.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: coord },
+        properties: {
+          agent_id: agent.id,
+          name: agent.name,
+          action: agent.last_action,
+          energy: agent.energy,
+          knowledge_score: agent.knowledge_score,
+        },
+      });
     }
 
-    // Remove agents that no longer exist
-    for (const [id, entity] of agentEntityMap.current) {
-      if (!seenIds.has(id)) {
-        viewer.entities.remove(entity);
-        agentEntityMap.current.delete(id);
-      }
+    const agentSource = map.getSource("agents") as maplibregl.GeoJSONSource | undefined;
+    if (agentSource) {
+      agentSource.setData({ type: "FeatureCollection", features: agentFeatures });
     }
   }, [agents]);
 
@@ -248,52 +297,41 @@ export default function Map3D() {
   const agentDetail = useSelectionStore((s) => s.agentDetail);
 
   useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
+    const map = mapRef.current;
+    if (!map) return;
 
     if (selectedKind === "location" && locationDetail) {
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          locationDetail.lng,
-          locationDetail.lat,
-          50_000,
-        ),
-        duration: 1.5,
+      map.flyTo({
+        center: [locationDetail.lng, locationDetail.lat],
+        zoom: Math.max(map.getZoom(), 10),
+        duration: 1200,
       });
     } else if (selectedKind === "agent" && agentDetail) {
-      const locEntity = locationEntityMap.current.get(agentDetail.location_id);
-      if (locEntity) {
-        viewer.flyTo(locEntity, { duration: 1.5 });
+      const coord = locationLookup.get(agentDetail.location_id);
+      if (coord) {
+        map.flyTo({
+          center: coord as [number, number],
+          zoom: Math.max(map.getZoom(), 10),
+          duration: 1200,
+        });
       }
     }
   }, [selectedKind, selectedId, locationDetail, agentDetail]);
 
-  // --- Controls ---
-  const zoomIn = () => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-    viewer.camera.zoomIn(viewer.camera.positionCartographic.height * 0.3);
-  };
-  const zoomOut = () => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-    viewer.camera.zoomOut(viewer.camera.positionCartographic.height * 0.3);
-  };
+  // --- Control handlers ---
+  const zoomIn = () => mapRef.current?.zoomIn({ duration: 300 });
+  const zoomOut = () => mapRef.current?.zoomOut({ duration: 300 });
   const resetView = () => {
-    viewerRef.current?.camera.flyTo({
-      destination: UK_CENTER,
-      duration: 1.5,
+    mapRef.current?.flyTo({
+      center: DEFAULT_CENTER,
+      zoom: GLOBE_ZOOM,
+      pitch: 0,
+      bearing: 0,
+      duration: 1200,
     });
   };
-  const resetRotation = () => {
-    const viewer = viewerRef.current;
-    if (!viewer) return;
-    const pos = viewer.camera.positionCartographic;
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, pos.height),
-      orientation: { heading: 0, pitch: -Cesium.Math.PI_OVER_TWO, roll: 0 },
-      duration: 0.8,
-    });
+  const resetNorth = () => {
+    mapRef.current?.easeTo({ bearing: 0, duration: 600 });
   };
 
   const ctrlBtn = "flex items-center justify-center rounded-md transition-colors cursor-default";
@@ -315,7 +353,7 @@ export default function Map3D() {
         <button className={ctrlBtn} style={ctrlStyle} title="Zoom in" onClick={zoomIn}><ZoomIn size={14} /></button>
         <button className={ctrlBtn} style={ctrlStyle} title="Zoom out" onClick={zoomOut}><ZoomOut size={14} /></button>
         <button className={ctrlBtn} style={ctrlStyle} title="Reset view" onClick={resetView}><LocateFixed size={14} /></button>
-        <button className={ctrlBtn} style={ctrlStyle} title="Reset rotation" onClick={resetRotation}><RotateCcw size={14} /></button>
+        <button className={ctrlBtn} style={ctrlStyle} title="North" onClick={resetNorth}><Compass size={14} /></button>
       </div>
 
       {/* View mode badge — bottom right */}

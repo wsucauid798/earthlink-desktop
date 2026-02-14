@@ -135,7 +135,7 @@ export default function MapSearch() {
   const hasQuery = query.trim().length > 0;
 
   return (
-    <div ref={containerRef} className="absolute top-3 left-3 z-20" style={{ width: 320 }}>
+    <div ref={containerRef} className="absolute top-3 left-1/2 -translate-x-1/2 z-20" style={{ width: 340 }}>
       {/* Search input */}
       <div
         className="flex items-center gap-2 px-3 py-2 text-xs"

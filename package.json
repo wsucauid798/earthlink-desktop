@@ -1,7 +1,7 @@
 {
   "name": "earthlink-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,12 +12,10 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "cesium": "^1.138.0",
     "lucide-react": "^0.564.0",
     "maplibre-gl": "^5.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "vite-plugin-cesium": "^1.2.23",
     "zustand": "^5.0.11"
   },
   "devDependencies": {

@@ -152,6 +152,53 @@ export interface TickEvent {
   agent_events: AgentEvent[];
 }
 
+// --- Extended Agent Types (pending server support) ---
+
+/** Archetype classification from behavioral clustering */
+export interface AgentArchetype {
+  label: string; // e.g. "explorer", "settler", "trader"
+  confidence: number; // 0..1
+  cluster_id?: number;
+}
+
+/** Belief about a specific location's conditions */
+export interface AgentBelief {
+  location_id: number;
+  location_name: string | null;
+  believed_conditions: Record<string, unknown>;
+  confidence: number; // 0..1
+  last_updated_tick: number;
+  /** How many ticks since last observation */
+  staleness: number;
+}
+
+/** Per-tick utility breakdown */
+export interface UtilityBreakdown {
+  tick: number;
+  reward: number;
+  knowledge_gain: number;
+  energy_cost: number;
+  exploration_bonus: number;
+  social_bonus: number;
+  total_utility: number;
+}
+
+/** Readiness score — is the agent prepared for its current goal */
+export interface ReadinessMetrics {
+  energy_sufficient: boolean;
+  knowledge_adequate: boolean;
+  goal_feasible: boolean;
+  overall_score: number; // 0..1
+}
+
+/** Extended agent detail — future version of AgentDetail */
+export interface AgentDetailExtended extends AgentDetail {
+  archetype?: AgentArchetype;
+  beliefs?: AgentBelief[];
+  utility_history?: UtilityBreakdown[];
+  readiness?: ReadinessMetrics;
+}
+
 // --- Simulation ---
 
 export interface SimulationControl {

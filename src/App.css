@@ -292,16 +292,6 @@ html, body, #root {
   color: var(--el-text-muted) !important;
 }
 
-/* --- CesiumJS overrides --- */
-
-.cesium-viewer {
-  font-family: inherit !important;
-}
-
-.cesium-viewer .cesium-viewer-bottom {
-  display: none !important;
-}
-
 /* --- Tauri: drag region for custom titlebar behaviour --- */
 
 [data-tauri-drag-region] {

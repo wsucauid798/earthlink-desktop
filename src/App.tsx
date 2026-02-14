@@ -2,36 +2,41 @@
  * EarthLink Desktop — main application shell.
  *
  * Layout:
- *  ┌──────────────────────────────────────────┐
- *  │ MenuBar                                  │
- *  ├────────┬─────────────────────┬───────────┤
- *  │        │                     │           │
- *  │Explorer│   Main Viewport     │ Inspector │
- *  │        │                     │           │
- *  │        ├─────────────────────┤           │
- *  │        │   Bottom Panel      │           │
- *  ├────────┴─────────────────────┴───────────┤
- *  │ StatusBar                                │
- *  └──────────────────────────────────────────┘
+ *  ┌──────────────────────────────────────────────┐
+ *  │ MenuBar                                      │
+ *  ├────────┬────────────────────────┬────────────┤
+ *  │        │ ViewportTabs (if >1)   │            │
+ *  │Explorer│────────────────────────│  Inspector  │
+ *  │        │ ViewportContent        │            │
+ *  │        │ (Map / Analytics /     │            │
+ *  │        │  Decisions / Traces)   │            │
+ *  │        ├────────────────────────┤            │
+ *  │        │ Bottom Panel           │            │
+ *  ├────────┴────────────────────────┴────────────┤
+ *  │ StatusBar                                    │
+ *  └──────────────────────────────────────────────┘
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import { useTheme, type ThemeMode } from "./hooks/useTheme";
 import { useResizable } from "./hooks/useResizable";
+import { useConnectionStore } from "./store/connectionStore";
 import MenuBar from "./components/MenuBar";
 import Explorer from "./components/Explorer";
 import Inspector from "./components/Inspector";
-import MainViewport from "./components/MainViewport";
+import ViewportTabs from "./components/ViewportTabs";
+import ViewportContent from "./components/ViewportContent";
 import BottomPanel from "./components/BottomPanel";
 import StatusBar from "./components/StatusBar";
 
 function App() {
+  /* Auto-connect on boot */
+  const autoConnect = useConnectionStore((s) => s.autoConnect);
+  useEffect(() => { autoConnect(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* Theme */
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
-
-  /* View mode */
-  const [viewMode, setViewMode] = useState<"2d" | "2.5d" | "3d">("2d");
 
   /* Panel visibility */
   const [showExplorer, setShowExplorer] = useState(true);
@@ -49,8 +54,6 @@ function App() {
       <MenuBar
         themeMode={themeMode}
         onThemeChange={(m: ThemeMode) => setThemeMode(m)}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
         showExplorer={showExplorer}
         onToggleExplorer={() => setShowExplorer((p) => !p)}
         showInspector={showInspector}
@@ -73,9 +76,12 @@ function App() {
 
         {/* Centre column: viewport + bottom panel */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          {/* Viewport */}
+          {/* Viewport tab bar (only visible when >1 tab open) */}
+          <ViewportTabs />
+
+          {/* Active viewport content */}
           <div className="flex-1 overflow-hidden">
-            <MainViewport viewMode={viewMode} />
+            <ViewportContent />
           </div>
 
           {/* Bottom panel */}
