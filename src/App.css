@@ -1,0 +1,314 @@
+@import "tailwindcss";
+
+/* ================================================================
+   EarthLink Desktop — Theme & Layout
+   Tailwind-first. Custom CSS only for overrides and specifics.
+   ================================================================ */
+
+/* --- Theme tokens (CSS custom properties) --- */
+
+:root {
+  /* Light mode — warm, modern palette */
+  --el-bg-app: #f5f5f4;
+  --el-bg-panel: #ffffff;
+  --el-bg-panel-alt: #fafaf9;
+  --el-bg-menu: #ffffff;
+  --el-bg-hover: rgba(0, 0, 0, 0.04);
+  --el-bg-active: rgba(59, 130, 246, 0.08);
+  --el-bg-viewport: #e7e5e4;
+  --el-bg-card: #ffffff;
+  --el-bg-card-hover: #fafaf9;
+  --el-bg-badge: rgba(0, 0, 0, 0.06);
+  --el-bg-input: #ffffff;
+  --el-border: #e7e5e4;
+  --el-border-subtle: #f5f5f4;
+  --el-border-card: #e7e5e4;
+  --el-text: #1c1917;
+  --el-text-secondary: #44403c;
+  --el-text-muted: #78716c;
+  --el-text-faint: #a8a29e;
+  --el-text-accent: #2563eb;
+  --el-text-on-accent: #ffffff;
+  --el-accent: #2563eb;
+  --el-accent-soft: rgba(37, 99, 235, 0.1);
+  --el-success: #16a34a;
+  --el-success-soft: rgba(22, 163, 74, 0.1);
+  --el-warning: #d97706;
+  --el-warning-soft: rgba(217, 119, 6, 0.1);
+  --el-danger: #dc2626;
+  --el-danger-soft: rgba(220, 38, 38, 0.1);
+  --el-info: #0891b2;
+  --el-info-soft: rgba(8, 145, 178, 0.1);
+  --el-scrollbar-track: transparent;
+  --el-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --el-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --el-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --el-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --el-radius-sm: 4px;
+  --el-radius-md: 8px;
+  --el-radius-lg: 12px;
+
+  /* Sizing */
+  --el-menubar-h: 2.5rem;
+  --el-statusbar-h: 1.75rem;
+  --el-panel-min: 12rem;
+  --el-bottom-min: 10rem;
+  --el-resize-handle: 3px;
+}
+
+.dark {
+  --el-bg-app: #0c0a09;
+  --el-bg-panel: #1c1917;
+  --el-bg-panel-alt: #1c1917;
+  --el-bg-menu: #1c1917;
+  --el-bg-hover: rgba(255, 255, 255, 0.05);
+  --el-bg-active: rgba(59, 130, 246, 0.12);
+  --el-bg-viewport: #0c0a09;
+  --el-bg-card: #292524;
+  --el-bg-card-hover: #2c2926;
+  --el-bg-badge: rgba(255, 255, 255, 0.08);
+  --el-bg-input: #292524;
+  --el-border: #292524;
+  --el-border-subtle: #1c1917;
+  --el-border-card: #44403c;
+  --el-text: #e7e5e4;
+  --el-text-secondary: #d6d3d1;
+  --el-text-muted: #a8a29e;
+  --el-text-faint: #78716c;
+  --el-text-accent: #60a5fa;
+  --el-text-on-accent: #ffffff;
+  --el-accent: #3b82f6;
+  --el-accent-soft: rgba(59, 130, 246, 0.15);
+  --el-success: #4ade80;
+  --el-success-soft: rgba(74, 222, 128, 0.12);
+  --el-warning: #fbbf24;
+  --el-warning-soft: rgba(251, 191, 36, 0.12);
+  --el-danger: #f87171;
+  --el-danger-soft: rgba(248, 113, 113, 0.12);
+  --el-info: #22d3ee;
+  --el-info-soft: rgba(34, 211, 238, 0.12);
+  --el-scrollbar-track: transparent;
+  --el-scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --el-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --el-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --el-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Base --- */
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: var(--el-bg-app);
+  color: var(--el-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent text selection on UI chrome (panels, menus) */
+.el-no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* --- Scrollbars --- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--el-scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--el-scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-faint);
+}
+
+/* --- Resize handles --- */
+
+.el-resize-h {
+  cursor: col-resize;
+  width: var(--el-resize-handle);
+  min-width: var(--el-resize-handle);
+  background: var(--el-border);
+  transition: background 0.15s;
+}
+.el-resize-h:hover,
+.el-resize-h:active {
+  background: var(--el-accent);
+}
+
+.el-resize-v {
+  cursor: row-resize;
+  height: var(--el-resize-handle);
+  min-height: var(--el-resize-handle);
+  background: var(--el-border);
+  transition: background 0.15s;
+}
+.el-resize-v:hover,
+.el-resize-v:active {
+  background: var(--el-accent);
+}
+
+/* --- Cards & Badges --- */
+
+.el-card {
+  background: var(--el-bg-card);
+  border: 1px solid var(--el-border-card);
+  border-radius: var(--el-radius-md);
+  transition: background 0.15s, border-color 0.15s;
+}
+.el-card:hover {
+  background: var(--el-bg-card-hover);
+}
+
+.el-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+}
+
+.el-badge-accent {
+  background: var(--el-accent-soft);
+  color: var(--el-text-accent);
+}
+
+.el-badge-success {
+  background: var(--el-success-soft);
+  color: var(--el-success);
+}
+
+.el-badge-warning {
+  background: var(--el-warning-soft);
+  color: var(--el-warning);
+}
+
+.el-badge-danger {
+  background: var(--el-danger-soft);
+  color: var(--el-danger);
+}
+
+.el-badge-info {
+  background: var(--el-info-soft);
+  color: var(--el-info);
+}
+
+.el-badge-muted {
+  background: var(--el-bg-badge);
+  color: var(--el-text-muted);
+}
+
+/* --- Energy bar --- */
+
+.el-energy-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--el-bg-badge);
+  overflow: hidden;
+}
+.el-energy-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* --- Section headers --- */
+
+.el-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--el-text-faint);
+}
+
+/* --- Panel chrome --- */
+
+.el-panel {
+  background: var(--el-bg-panel);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.el-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--el-text-muted);
+  border-bottom: 1px solid var(--el-border);
+  flex-shrink: 0;
+}
+
+/* --- MapLibre GL overrides --- */
+
+.maplibregl-popup-content {
+  background: var(--el-bg-panel) !important;
+  color: var(--el-text) !important;
+  border: 1px solid var(--el-border-card) !important;
+  border-radius: var(--el-radius-md) !important;
+  box-shadow: var(--el-shadow-md) !important;
+  padding: 8px 12px !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: var(--el-bg-panel) !important;
+}
+
+.maplibregl-ctrl-attrib {
+  background: var(--el-bg-panel) !important;
+  color: var(--el-text-faint) !important;
+  font-size: 9px !important;
+  border-radius: 4px !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--el-text-muted) !important;
+}
+
+/* --- CesiumJS overrides --- */
+
+.cesium-viewer {
+  font-family: inherit !important;
+}
+
+.cesium-viewer .cesium-viewer-bottom {
+  display: none !important;
+}
+
+/* --- Tauri: drag region for custom titlebar behaviour --- */
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input {
+  -webkit-app-region: no-drag;
+}
