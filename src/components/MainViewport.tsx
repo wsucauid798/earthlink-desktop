@@ -2,7 +2,8 @@
  * MainViewport — the central visualisation area.
  *
  * The map IS the app:
- * - 2D / 2.5D / 3D globe all via MapLibre GL JS (Map2D)
+ * - 2D / 2.5D: Map2D (MapLibre mercator + pitch)
+ * - 3D globe: Map3D (MapLibre globe projection) — different implementation
  * - Floating search bar on top of the map
  *
  * When disconnected, shows a quiet status — no buttons, no prompts.
@@ -14,6 +15,7 @@ import { useConnectionStore } from "../store/connectionStore";
 import { useViewModeStore } from "../store/viewModeStore";
 import MapSearch from "./MapSearch";
 import Map2D from "./Map2D";
+import Map3D from "./Map3D";
 
 export default function MainViewport() {
   const viewMode = useViewModeStore((s) => s.viewMode);
@@ -23,13 +25,15 @@ export default function MainViewport() {
   const error = useConnectionStore((s) => s.error);
   const connect = useConnectionStore((s) => s.connect);
 
+  const isGlobe = viewMode === "3d";
+
   return (
     <div
       className="h-full w-full relative overflow-hidden"
       style={{ background: "var(--el-bg-viewport)" }}
     >
-      {/* --- The map --- all modes handled by Map2D (MapLibre) */}
-      {connected && <Map2D />}
+      {/* --- Map: 2D/2.5D vs 3D are different implementations --- */}
+      {connected && (isGlobe ? <Map3D /> : <Map2D />)}
 
       {/* --- Floating search overlay --- */}
       {connected && <MapSearch />}
