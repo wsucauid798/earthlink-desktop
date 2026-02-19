@@ -10,10 +10,15 @@ import type {
   AgentDetail,
   AgentSummary,
   Astronomy,
+  AtmosphereData,
+  GeophysicsData,
   Location,
   NearbyLocation,
+  OrbitalData,
   ServerVersion,
+  SolarActivity,
   Weather,
+  WindData,
   WorldState,
 } from "./types";
 
@@ -91,10 +96,40 @@ export class EarthLinkClient {
     return this.get(`/api/weather/${locationId}`);
   }
 
+  // --- Wind ---
+
+  getWind(locationId: number): Promise<WindData | null> {
+    return this.get(`/api/wind/${locationId}`);
+  }
+
   // --- Astronomy ---
 
   getAstronomy(locationId: number): Promise<Astronomy | null> {
     return this.get(`/api/astronomy/${locationId}`);
+  }
+
+  // --- Geophysics ---
+
+  getGeophysics(locationId: number): Promise<GeophysicsData | null> {
+    return this.get(`/api/geophysics/${locationId}`);
+  }
+
+  // --- Atmosphere ---
+
+  getAtmosphere(locationId: number): Promise<AtmosphereData | null> {
+    return this.get(`/api/atmosphere/${locationId}`);
+  }
+
+  // --- Orbital ---
+
+  getOrbital(): Promise<OrbitalData> {
+    return this.get("/api/orbital");
+  }
+
+  // --- Data Feeds ---
+
+  getSolarActivity(): Promise<SolarActivity | null> {
+    return this.get("/api/data-feeds/solar");
   }
 
   // --- Time ---

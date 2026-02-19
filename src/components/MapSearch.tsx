@@ -56,6 +56,7 @@ export default function MapSearch() {
   const [showResults, setShowResults] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { selectLocation, selectAgent } = useSelectionStore();
 
   const doSearch = useCallback((q: string) => {
@@ -131,6 +132,28 @@ export default function MapSearch() {
     };
   }, []);
 
+  // Global keyboard shortcut: "/" or Ctrl+K to focus search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger if already typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") {
+        // Escape blurs the search input
+        if (e.key === "Escape" && e.target === inputRef.current) {
+          inputRef.current?.blur();
+          setShowResults(false);
+        }
+        return;
+      }
+      if (e.key === "/" || (e.key === "k" && (e.ctrlKey || e.metaKey))) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
   const hasResults = locationResults.length > 0 || agentResults.length > 0;
   const hasQuery = query.trim().length > 0;
 
@@ -154,8 +177,9 @@ export default function MapSearch() {
           <Search size={14} style={{ color: "var(--el-text-faint)" }} />
         )}
         <input
+          ref={inputRef}
           type="text"
-          placeholder="Search locations, agents..."
+          placeholder="Search locations, agents...  /"
           value={query}
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => { if (hasQuery) setShowResults(true); }}

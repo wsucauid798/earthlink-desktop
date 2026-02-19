@@ -49,6 +49,24 @@ export interface Weather {
   conditions: string | null;
 }
 
+// --- Wind ---
+
+export interface WindData {
+  location_id: number;
+  speed_kmh: number | null;
+  direction_deg: number | null;
+  gust_kmh: number | null;
+  speed_upper_kmh: number | null;
+  direction_upper_deg: number | null;
+  upper_height_m: number | null;
+  pressure_hpa: number | null;
+  beaufort: number;
+  beaufort_description: string;
+  terrain_modifier: string | null;
+  is_interpolated: boolean;
+  interpolation_distance_km: number | null;
+}
+
 // --- Time ---
 
 export interface WorldTime {
@@ -67,13 +85,94 @@ export interface WorldTime {
 // --- Astronomy ---
 
 export interface Astronomy {
+  // Sun
   sunrise: string | null;
   sunset: string | null;
+  solar_noon: string | null;
   day_length_hours: number | null;
   is_daylight: boolean;
+  solar_elevation_deg: number | null;
+  solar_azimuth_deg: number | null;
+
+  // Twilight
+  civil_dawn: string | null;
+  civil_dusk: string | null;
+  nautical_dawn: string | null;
+  nautical_dusk: string | null;
+
+  // Moon
+  moon_phase: number | null;
+  moon_phase_name: string | null;
+  moon_phase_emoji: string | null;
+  moon_illumination_pct: number | null;
+  moon_age_days: number | null;
+  moonrise: string | null;
+  moonset: string | null;
+}
+
+// --- Geophysics ---
+
+export interface GeophysicsData {
+  gravity_ms2: number;
+  gravity_base_ms2: number;
+  tidal_variation_ms2: number;
+  magnetic_field_ut: number;
+  magnetic_declination_deg: number;
+  magnetic_inclination_deg: number;
+  rotation_speed_kmh: number;
+}
+
+// --- Atmosphere ---
+
+export interface AtmosphereData {
+  // Air quality (fetched)
+  european_aqi: number | null;
+  european_aqi_label: string | null;
+  us_aqi: number | null;
+  pm2_5: number | null;
+  pm10: number | null;
+  ozone: number | null;
+  nitrogen_dioxide: number | null;
+  sulphur_dioxide: number | null;
+  carbon_monoxide: number | null;
+  // Derived (computed)
+  dew_point_c: number | null;
+  feels_like_c: number | null;
+  uv_index: number | null;
+  air_density_kgm3: number | null;
 }
 
 // --- World State ---
+
+export interface WeatherSummary {
+  temperature_c: number | null;
+  conditions: string | null;
+  wind_speed_kmh: number | null;
+  is_daylight: boolean;
+}
+
+export interface RefreshStatus {
+  enabled: boolean;
+  interval_minutes: number;
+  last_refresh: string | null;
+  refresh_count: number;
+}
+
+export interface EarthProxyStatus {
+  adapters: number;
+  total_resolves: number;
+  ttl_seconds: number;
+  backend: string;
+}
+
+export interface GeographyStats {
+  location_types: Record<string, number>;
+  countries: Record<string, number>;
+  regions: Record<string, number>;
+  total_population: number;
+  elevation_min: number | null;
+  elevation_max: number | null;
+}
 
 export interface WorldState {
   time: WorldTime | null;
@@ -81,9 +180,14 @@ export interface WorldState {
   location_count: number;
   connection_count: number;
   weather_stations: number;
-  weather: Record<string, Record<string, unknown>>;
+  wind_stations: number;
+  weather: Record<string, WeatherSummary>;
+  geography_stats: GeographyStats | null;
   agent_count: number;
+  agent_backend: string;
   agents: AgentSummary[];
+  earth_proxy: EarthProxyStatus | null;
+  refresh: Record<string, RefreshStatus> | null;
 }
 
 // --- Agents ---
@@ -132,6 +236,41 @@ export interface AgentAnswer {
   supporting_facts: Record<string, unknown>[];
 }
 
+// --- Orbital ---
+
+export interface OrbitalData {
+  earth_sun_distance_km: number;
+  earth_sun_distance_au: number;
+  orbital_position_deg: number;
+  true_anomaly_deg: number;
+  mean_anomaly_deg: number;
+  orbital_speed_kms: number;
+  axial_tilt_deg: number;
+  solar_declination_deg: number;
+  season: string;
+  season_progress: number;
+  days_to_perihelion: number;
+  days_to_next_event: number;
+  next_event: string;
+  eccentricity: number;
+  semi_major_axis_km: number;
+}
+
+// --- Solar Activity ---
+
+export interface SolarActivity {
+  kp_index: number | null;
+  kp_category: string | null;
+  solar_wind_speed_kms: number | null;
+  solar_wind_density: number | null;
+  solar_wind_temperature_k: number | null;
+  bz_gsm_nt: number | null;
+  bt_nt: number | null;
+  xray_flux: number | null;
+  xray_class: string | null;
+  last_updated: string | null;
+}
+
 // --- Tick Event (WebSocket) ---
 
 export interface AgentEvent {
@@ -149,6 +288,10 @@ export interface TickEvent {
   tick: number;
   time: WorldTime;
   weather_updated: boolean;
+  wind_updated: boolean;
+  atmosphere_updated: boolean;
+  astronomy_updated: boolean;
+  data_feeds_updated: boolean;
   agent_events: AgentEvent[];
 }
 

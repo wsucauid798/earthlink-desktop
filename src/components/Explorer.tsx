@@ -5,6 +5,7 @@
  * No redundancy with other panels. Empty sections are hidden.
  */
 
+import { useEffect, useState } from "react";
 import {
   Globe,
   Bot,
@@ -17,6 +18,15 @@ import {
   Brain,
   TrendingUp,
   Route,
+  Thermometer,
+  Sun,
+  Moon,
+  Server,
+  Mountain,
+  Users,
+  Map,
+  Flag,
+  Building2,
 } from "lucide-react";
 import { useWorldStore } from "../store/worldStore";
 import { useConnectionStore } from "../store/connectionStore";
@@ -76,8 +86,8 @@ function AgentAggregates() {
 
   if (agents.length === 0) return null;
 
-  // Energy stats
-  const energies = agents.map((a) => a.energy);
+  // Energy stats — normalise to 0-1 (server may return 0-1 or 0-100)
+  const energies = agents.map((a) => (a.energy > 1 ? a.energy / 100 : a.energy));
   const avgEnergy = energies.reduce((s, e) => s + e, 0) / energies.length;
   const minEnergy = Math.min(...energies);
 
@@ -100,12 +110,13 @@ function AgentAggregates() {
   }
   const avgRewardPerTick = totalTicks > 0 ? totalReward / totalTicks : 0;
 
-  // Action distribution across all agents (latest action)
+  // Action distribution — extract verb only (e.g. "move" from "move:63755->62793")
   const actionCounts: Record<string, number> = {};
   for (const a of agents) {
-    actionCounts[a.last_action] = (actionCounts[a.last_action] || 0) + 1;
+    const verb = a.last_action.split(":")[0];
+    actionCounts[verb] = (actionCounts[verb] || 0) + 1;
   }
-  const topAction = Object.entries(actionCounts).sort(([, a], [, b]) => b - a)[0];
+  const sortedActions = Object.entries(actionCounts).sort(([, a], [, b]) => b - a);
 
   return (
     <>
@@ -116,11 +127,62 @@ function AgentAggregates() {
         <Row icon={<Brain size={11} />} label="Avg Knowledge" value={avgKnowledge.toFixed(1)} />
         <Row icon={<Brain size={11} />} label="Max Knowledge" value={maxKnowledge.toFixed(1)} />
         <Row icon={<TrendingUp size={11} />} label="Avg Reward/tick" value={avgRewardPerTick.toFixed(3)} color={avgRewardPerTick >= 0 ? "var(--el-success)" : "var(--el-danger)"} />
-        <Row icon={<Route size={11} />} label="Unique Places Visited" value={uniqueVisited.size} />
-        {topAction && (
-          <Row icon={<Activity size={11} />} label="Dominant Action" value={`${topAction[0]} (${topAction[1]})`} />
+        {uniqueVisited.size > 0 && (
+          <Row icon={<Route size={11} />} label="Unique Places Visited" value={uniqueVisited.size} />
         )}
       </div>
+
+      {sortedActions.length > 0 && (
+        <>
+          <Section label="Activity" />
+          <div className="px-3">
+            {sortedActions.map(([verb, count]) => (
+              <Row
+                key={verb}
+                icon={<Activity size={11} />}
+                label={verb}
+                value={`${count} agent${count !== 1 ? "s" : ""}`}
+                color="var(--el-text-secondary)"
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/* ---------- Weather summary stats ---------- */
+
+function WeatherStats({ summary }: { summary: Record<string, { temperature_c?: number | null; conditions?: string | null; is_daylight?: boolean }> }) {
+  const entries = Object.values(summary);
+  if (entries.length === 0) return null;
+
+  // Average temperature
+  const temps = entries.map((e) => e.temperature_c).filter((t): t is number => t != null);
+  const avgTemp = temps.length > 0 ? temps.reduce((s, t) => s + t, 0) / temps.length : null;
+
+  // Daylight count
+  const daylightCount = entries.filter((e) => e.is_daylight).length;
+
+  // Most common condition
+  const condCounts: Record<string, number> = {};
+  for (const e of entries) {
+    if (e.conditions) {
+      condCounts[e.conditions] = (condCounts[e.conditions] || 0) + 1;
+    }
+  }
+  const topCondition = Object.entries(condCounts).sort(([, a], [, b]) => b - a)[0];
+
+  return (
+    <>
+      {avgTemp != null && (
+        <Row icon={<Thermometer size={11} />} label="Avg Temp" value={`${avgTemp.toFixed(1)}\u00B0C`} />
+      )}
+      {topCondition && (
+        <Row icon={<Cloud size={11} />} label="Conditions" value={`${topCondition[0]}`} />
+      )}
+      <Row icon={daylightCount > 0 ? <Sun size={11} /> : <Moon size={11} />} label="Daylight" value={`${daylightCount}/${entries.length} stations`} />
     </>
   );
 }
@@ -129,54 +191,66 @@ function AgentAggregates() {
 
 export default function Explorer() {
   const connected = useConnectionStore((s) => s.connected);
-  const connecting = useConnectionStore((s) => s.connecting);
   const {
     time,
     isRunning,
     locationCount,
     connectionCount,
     agentCount,
+    agentBackend,
     weatherStations,
     tickCount,
+    weatherSummary,
+    geographyStats,
   } = useWorldStore();
 
-  const hours = time ? String(time.hour).padStart(2, "0") : "--";
-  const minutes = time ? String(time.minute).padStart(2, "0") : "--";
+  // Real-time ticking clock — updates every second
+  const [clockTime, setClockTime] = useState(() => new Date());
+  useEffect(() => {
+    if (!connected) return;
+    const id = setInterval(() => setClockTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [connected]);
+
+  const hours = connected ? String(clockTime.getUTCHours()).padStart(2, "0") : "--";
+  const minutes = connected ? String(clockTime.getUTCMinutes()).padStart(2, "0") : "--";
+  const seconds = connected ? String(clockTime.getUTCSeconds()).padStart(2, "0") : "--";
+
+  // Full date from server time (authoritative world date)
+  let fullDate = "";
+  if (time?.current_time) {
+    const utc = new Date(time.current_time);
+    fullDate = utc.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  }
 
   return (
     <div className="el-panel el-no-select">
       <div className="el-panel-header"><Globe size={12} />World</div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* When not connected, show minimal waiting state */}
-        {!connected && (
-          <div className="px-3 py-6 text-center">
-            <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
-              {connecting ? "Connecting..." : "Awaiting connection"}
-            </span>
-          </div>
-        )}
-
         {/* Connected world data */}
         {connected && (
           <>
-            {/* Time block */}
+            {/* Time block — real-time ticking clock */}
             <div className="px-3 pt-3 pb-1">
               <div className="flex items-baseline justify-between">
                 <span className="text-2xl font-bold tabular-nums tracking-tight" style={{ color: "var(--el-text)" }}>
-                  {hours}:{minutes}
+                  {hours}:{minutes}:{seconds}
                 </span>
                 <span className="text-[11px]" style={{ color: "var(--el-text-muted)" }}>
-                  {time?.timezone_abbr ?? ""}
+                  UTC
                 </span>
               </div>
-              {time && (
-                <div className="flex items-center justify-between mt-0.5">
+              {fullDate && (
+                <div className="mt-0.5">
                   <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
-                    {time.date}
-                  </span>
-                  <span className="text-[10px] font-medium" style={{ color: "var(--el-text-accent)" }}>
-                    {time.season}
+                    {fullDate}
                   </span>
                 </div>
               )}
@@ -187,6 +261,9 @@ export default function Explorer() {
             <div className="px-3">
               <Row icon={<Activity size={11} />} label="Status" value={isRunning ? "Running" : "Stopped"} color={isRunning ? "var(--el-success)" : "var(--el-text-faint)"} />
               <Row icon={<Clock size={11} />} label="Tick" value={tickCount} />
+              {agentBackend && (
+                <Row icon={<Server size={11} />} label="Runtime" value={agentBackend} />
+              )}
             </div>
 
             {/* Geography */}
@@ -194,6 +271,21 @@ export default function Explorer() {
             <div className="px-3">
               <Row icon={<MapPin size={11} />} label="Locations" value={locationCount} />
               <Row icon={<Link size={11} />} label="Connections" value={connectionCount} />
+              {geographyStats && Object.keys(geographyStats.countries).length > 0 && (
+                <Row icon={<Flag size={11} />} label="Countries" value={Object.keys(geographyStats.countries).length} />
+              )}
+              {geographyStats && Object.keys(geographyStats.regions).length > 0 && (
+                <Row icon={<Map size={11} />} label="Regions" value={Object.keys(geographyStats.regions).length} />
+              )}
+              {geographyStats && Object.keys(geographyStats.location_types).length > 0 && (
+                <Row icon={<Building2 size={11} />} label="Place Types" value={Object.keys(geographyStats.location_types).length} />
+              )}
+              {geographyStats?.total_population != null && geographyStats.total_population > 0 && (
+                <Row icon={<Users size={11} />} label="Population" value={geographyStats.total_population} />
+              )}
+              {geographyStats?.elevation_min != null && geographyStats?.elevation_max != null && (
+                <Row icon={<Mountain size={11} />} label="Elevation" value={`${geographyStats.elevation_min}m \u2013 ${geographyStats.elevation_max}m`} />
+              )}
             </div>
 
             {/* Agents */}
@@ -205,15 +297,17 @@ export default function Explorer() {
             {/* Aggregate metrics — strategy space overview */}
             <AgentAggregates />
 
-            {/* Weather — only show if we have stations */}
+            {/* Weather — summary stats from station data */}
             {weatherStations > 0 && (
               <>
                 <Section label="Weather" />
                 <div className="px-3">
                   <Row icon={<Cloud size={11} />} label="Stations" value={weatherStations} />
+                  <WeatherStats summary={weatherSummary} />
                 </div>
               </>
             )}
+
           </>
         )}
       </div>

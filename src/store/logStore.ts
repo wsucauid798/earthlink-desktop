@@ -78,9 +78,13 @@ export const useLogStore = create<LogStoreState>((set) => ({
 
   addTickEvent: (event) =>
     set((s) => {
-      const tickTime = event.time
-        ? `${String(event.time.hour).padStart(2, "0")}:${String(event.time.minute).padStart(2, "0")} ${event.time.timezone_abbr}`
-        : now();
+      let tickTime: string;
+      if (event.time?.current_time) {
+        const utc = new Date(event.time.current_time);
+        tickTime = `${String(utc.getUTCHours()).padStart(2, "0")}:${String(utc.getUTCMinutes()).padStart(2, "0")} UTC`;
+      } else {
+        tickTime = now();
+      }
 
       const tickEntry: TickLogEntry = {
         id: nextId(),

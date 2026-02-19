@@ -66,6 +66,7 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
   const agents = useWorldStore((s) => s.agents);
   const selectLocation = useSelectionStore((s) => s.selectLocation);
   const selectAgent = useSelectionStore((s) => s.selectAgent);
+  const clearSelection = useSelectionStore((s) => s.clearSelection);
 
   // --- Initialise map ---
   useEffect(() => {
@@ -291,6 +292,45 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
 
       agentSourceReady.current = true;
 
+      // --- Hide agent markers on far side of globe ---
+      //
+      // HTML markers are always projected to screen space by MapLibre,
+      // even when the underlying coordinate is on the back of the globe.
+      // On every move we compute the great-circle angular distance from
+      // the map center to each marker and hide any that are > 90° away.
+
+      const DEG2RAD = Math.PI / 180;
+
+      const updateMarkerVisibility = () => {
+        const proj = map.getProjection?.();
+        if (!proj || proj.type !== "globe") {
+          // In Mercator, all markers are always visible
+          for (const [, m] of agentMarkers.current) {
+            m.getElement().style.visibility = "";
+          }
+          return;
+        }
+
+        const center = map.getCenter();
+        const cLat = center.lat * DEG2RAD;
+        const cLng = center.lng * DEG2RAD;
+        const sinCLat = Math.sin(cLat);
+        const cosCLat = Math.cos(cLat);
+
+        for (const [, marker] of agentMarkers.current) {
+          const ll = marker.getLngLat();
+          const mLat = ll.lat * DEG2RAD;
+          const mLng = ll.lng * DEG2RAD;
+          // cos of angular distance — positive means same hemisphere
+          const cosD =
+            sinCLat * Math.sin(mLat) +
+            cosCLat * Math.cos(mLat) * Math.cos(mLng - cLng);
+          marker.getElement().style.visibility = cosD > 0 ? "" : "hidden";
+        }
+      };
+
+      map.on("move", updateMarkerVisibility);
+
       // --- Click handlers ---
 
       map.on("click", "locations-circle", (e) => {
@@ -304,6 +344,16 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         const feat = e.features?.[0];
         if (feat?.properties?.agent_id) {
           selectAgent(String(feat.properties.agent_id));
+        }
+      });
+
+      // Click empty map space → clear selection
+      map.on("click", (e) => {
+        const features = map.queryRenderedFeatures(e.point, {
+          layers: ["locations-circle", "agents-circle"],
+        });
+        if (features.length === 0) {
+          clearSelection();
         }
       });
 
@@ -344,7 +394,8 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [number, number];
         const { name, location_name, action } = feat.properties as Record<string, string>;
         const locLine = location_name ? `at <strong>${location_name}</strong>` : "";
-        const actionLine = action ? `· ${action}` : "";
+        const actionVerb = action ? action.split(":")[0] : "";
+        const actionLine = actionVerb ? `· ${actionVerb}` : "";
         agentPopup
           .setLngLat(coords)
           .setHTML(`<strong>${name ?? "Agent"}</strong><br/><span style="opacity:0.85">${locLine} ${actionLine}</span>`)

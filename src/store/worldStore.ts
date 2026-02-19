@@ -13,7 +13,11 @@ import { create } from "zustand";
 import type {
   AgentEvent,
   AgentSummary,
+  EarthProxyStatus,
+  GeographyStats,
+  RefreshStatus,
   TickEvent,
+  WeatherSummary,
   WorldState,
   WorldTime,
 } from "../api/types";
@@ -25,9 +29,22 @@ export interface WorldStoreState {
   connectionCount: number;
   weatherStations: number;
   agentCount: number;
+  agentBackend: string;
 
   // Time
   time: WorldTime | null;
+
+  // Weather summary (keyed by location name)
+  weatherSummary: Record<string, WeatherSummary>;
+
+  // Earth geography statistics
+  geographyStats: GeographyStats | null;
+
+  // Earth proxy
+  earthProxy: EarthProxyStatus | null;
+
+  // Data freshness
+  refresh: Record<string, RefreshStatus> | null;
 
   // ALL agents — always in memory, rendered on the map in real time
   agents: AgentSummary[];
@@ -48,7 +65,12 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
   connectionCount: 0,
   weatherStations: 0,
   agentCount: 0,
+  agentBackend: "",
   time: null,
+  weatherSummary: {},
+  geographyStats: null,
+  earthProxy: null,
+  refresh: null,
   agents: [],
   tickCount: 0,
   lastAgentEvents: [],
@@ -60,8 +82,13 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
       connectionCount: state.connection_count,
       weatherStations: state.weather_stations,
       agentCount: state.agent_count,
+      agentBackend: state.agent_backend ?? "",
       time: state.time,
       tickCount: state.time?.tick_count ?? 0,
+      weatherSummary: state.weather ?? {},
+      geographyStats: state.geography_stats ?? null,
+      earthProxy: state.earth_proxy ?? null,
+      refresh: state.refresh ?? null,
       // World state also includes agent summaries
       agents: state.agents ?? get().agents,
     }),

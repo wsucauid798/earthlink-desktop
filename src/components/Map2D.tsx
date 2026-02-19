@@ -10,7 +10,7 @@
  * All shared controls live in MapControls.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useViewModeStore } from "../store/viewModeStore";
 import { useSelectionStore } from "../store/selectionStore";
 import { useAgentHistoryStore } from "../store/agentHistoryStore";
@@ -23,12 +23,50 @@ const DEFAULT_ZOOM = 2;
 export default function Map2D() {
   const viewMode = useViewModeStore((s) => s.viewMode);
 
+  const constraintRef = useRef<(() => void) | null>(null);
+
+  /** Attach or re-attach the 2.5D latitude constraint handler. */
+  const attach25dConstraint = (map: maplibregl.Map) => {
+    // Remove previous handler
+    if (constraintRef.current) {
+      map.off("move", constraintRef.current);
+      constraintRef.current = null;
+    }
+
+    const MAX_LAT = 85;
+    let clamping = false;
+
+    const handler = () => {
+      if (clamping) return;
+      const vb = map.getBounds();
+      const north = vb.getNorth();
+      const south = vb.getSouth();
+      if (north > MAX_LAT || south < -MAX_LAT) {
+        clamping = true;
+        const c = map.getCenter();
+        let lat = c.lat;
+        if (north > MAX_LAT) lat -= north - MAX_LAT;
+        if (south < -MAX_LAT) lat += -MAX_LAT - south;
+        map.jumpTo({ center: [c.lng, lat] });
+        clamping = false;
+      }
+    };
+
+    map.on("move", handler);
+    constraintRef.current = handler;
+  };
+
   const { containerRef, mapRef } = useEarthMap({
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
     pitch: viewMode === "2.5d" ? 45 : 0,
     bearing: viewMode === "2.5d" ? -15 : 0,
     logLabel: "map",
+    onStyleLoaded: (map) => {
+      if (useViewModeStore.getState().viewMode === "2.5d") {
+        attach25dConstraint(map);
+      }
+    },
   });
 
   // --- 2D ↔ 2.5D switching ---
@@ -40,6 +78,17 @@ export default function Map2D() {
     const is25d = viewMode === "2.5d";
     map.setProjection({ type: "mercator" });
     map.setMinZoom(is25d ? 3 : 0);
+
+    // In 2.5D the pitched camera sees far beyond the center point, so
+    // maxBounds (which constrains the center) isn't enough. Instead we
+    // check the actual visible bounds on every move and nudge the center
+    // back whenever the viewport extends past the Mercator limits.
+    if (is25d) {
+      attach25dConstraint(map);
+    } else if (constraintRef.current) {
+      map.off("move", constraintRef.current);
+      constraintRef.current = null;
+    }
 
     const minZoom = is25d ? 3 : 0;
     const targetZoom = map.getZoom() < minZoom ? minZoom : undefined;

@@ -1,33 +1,86 @@
 /**
  * MenuBar — top-level menu bar with dropdown menus.
  *
- * File | View | World | Agents | Help
+ * File | World | Agents | View | Tools | Help
  *
  * Wired to stores for simulation control and connection.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Sun,
-  Moon,
-  Monitor,
-  Clock,
-  Settings,
-  Info,
-  Play,
-  Pause,
-  RotateCcw,
-  Eye,
-  EyeOff,
-  LayoutPanelLeft,
-  PanelBottom,
-  PanelRight,
-  Palette,
-  Globe,
+  Activity,
+  ArrowLeftRight,
+  BarChart3,
+  BookOpen,
+  Brain,
+  Bug,
+  Cable,
+  Camera,
   Check,
   ChevronRight,
+  ClipboardCheck,
+  Clock,
+  Cloud,
+  CloudSun,
+  Compass,
+  Database,
+  Dices,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  FileUp,
+  FlaskConical,
+  Gauge,
+  Globe,
+  GraduationCap,
+  Hash,
+  History,
+  Info,
+  Keyboard,
+  Landmark,
+  Layers,
+  LayoutPanelLeft,
+  Lightbulb,
+  LogOut,
+  Map,
+  MapPin,
+  MessageCircle,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Mountain,
+  Network,
+  Orbit,
+  Palette,
+  PanelBottom,
+  PanelRight,
+  PanelsTopLeft,
+  Pause,
+  Play,
+  Plug,
+  Radio,
+  RefreshCw,
+  Rocket,
+  RotateCcw,
+  Route,
+  Scale,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
+  Sun,
+  Tag,
+  Target,
+  Timer,
+  Terminal,
+  Undo2,
+  Upload,
+  Users,
   Wifi,
   WifiOff,
+  Wind,
+  Zap,
 } from "lucide-react";
 import type { ThemeMode } from "../hooks/useTheme";
 import { useConnectionStore } from "../store/connectionStore";
@@ -74,19 +127,6 @@ export interface MenuBarProps {
 
 const ICON_SIZE = 14;
 
-function themeIcon(mode: ThemeMode) {
-  switch (mode) {
-    case "light":
-      return <Sun size={ICON_SIZE} />;
-    case "dark":
-      return <Moon size={ICON_SIZE} />;
-    case "system":
-      return <Monitor size={ICON_SIZE} />;
-    case "auto":
-      return <Clock size={ICON_SIZE} />;
-  }
-}
-
 /* ----- Connect dialog ----- */
 
 function ConnectDialog({
@@ -112,7 +152,7 @@ function ConnectDialog({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.4)" }}
+      style={{ background: "var(--el-backdrop)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
@@ -302,7 +342,7 @@ export default function MenuBar({
   const [openMenu, setOpenMenu] = useState<number | null>(null);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
-  const { connected } = useConnectionStore();
+  const { connected, disconnect } = useConnectionStore();
   const log = useLogStore.getState;
 
   /* Close menu on outside click */
@@ -340,111 +380,249 @@ export default function MenuBar({
     }
   };
 
+  const stub = () => {};
+
   const menus: MenuDef[] = [
+    /* ── FILE ── */
     {
       label: "File",
       items: [
-        { label: "Settings", icon: <Settings size={ICON_SIZE} />, shortcut: "Ctrl+,", action: () => {} },
+        {
+          label: connected ? "Change Server\u2026" : "Connect to Server\u2026",
+          icon: <Wifi size={ICON_SIZE} />,
+          action: () => setShowConnectDialog(true),
+        },
+        {
+          label: "Disconnect",
+          icon: <WifiOff size={ICON_SIZE} />,
+          action: () => disconnect(),
+          disabled: !connected,
+        },
         { separator: true },
-        { label: "Exit", action: () => {} },
+        { label: "Settings\u2026", icon: <Settings size={ICON_SIZE} />, shortcut: "Ctrl+,", action: stub },
+        { separator: true },
+        { label: "Exit", icon: <LogOut size={ICON_SIZE} />, action: stub },
       ],
     },
+    /* ── WORLD ── */
+    {
+      label: "World",
+      items: [
+        {
+          label: "Geography",
+          icon: <MapPin size={ICON_SIZE} />,
+          submenu: [
+            { label: "Regions\u2026", icon: <Map size={ICON_SIZE} />, action: stub },
+            { label: "Location Types\u2026", icon: <Landmark size={ICON_SIZE} />, action: stub },
+            { label: "Connections\u2026", icon: <Route size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Earth Systems",
+          icon: <Globe size={ICON_SIZE} />,
+          submenu: [
+            { label: "Weather & Wind", icon: <CloudSun size={ICON_SIZE} />, action: stub },
+            { label: "Atmosphere", icon: <Wind size={ICON_SIZE} />, action: stub },
+            { label: "Astronomy", icon: <Star size={ICON_SIZE} />, action: stub },
+            { label: "Geophysics", icon: <Mountain size={ICON_SIZE} />, action: stub },
+            { label: "Orbital Mechanics", icon: <Orbit size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Earth Proxy",
+          icon: <Database size={ICON_SIZE} />,
+          submenu: [
+            { label: "Adapters\u2026", icon: <Plug size={ICON_SIZE} />, action: stub },
+            { label: "Refresh Policies\u2026", icon: <Timer size={ICON_SIZE} />, action: stub },
+            { label: "Data Sources\u2026", icon: <Database size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Time",
+          icon: <Clock size={ICON_SIZE} />,
+          submenu: [
+            { label: "Timezone\u2026", icon: <Globe size={ICON_SIZE} />, action: stub },
+            { label: "Time Scale\u2026", icon: <Timer size={ICON_SIZE} />, action: stub },
+          ],
+        },
+      ],
+    },
+    /* ── AGENTS ── */
+    {
+      label: "Agents",
+      items: [
+        { label: "Count\u2026", icon: <Hash size={ICON_SIZE} />, action: stub },
+        {
+          label: "Archetypes",
+          icon: <Users size={ICON_SIZE} />,
+          submenu: [
+            { label: "Pathfinders", icon: <Compass size={ICON_SIZE} />, action: stub },
+            { label: "Surveyors", icon: <Search size={ICON_SIZE} />, action: stub },
+            { label: "Pioneers", icon: <Rocket size={ICON_SIZE} />, action: stub },
+            { label: "Specialists", icon: <Target size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Learning",
+          icon: <GraduationCap size={ICON_SIZE} />,
+          submenu: [
+            { label: "Learning Rate\u2026", icon: <Gauge size={ICON_SIZE} />, action: stub },
+            { label: "Exploration Bias\u2026", icon: <Scale size={ICON_SIZE} />, action: stub },
+            { label: "Curiosity Weights\u2026", icon: <Sparkles size={ICON_SIZE} />, action: stub },
+            { label: "Backtracking Tolerance\u2026", icon: <Undo2 size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Memory",
+          icon: <Brain size={ICON_SIZE} />,
+          submenu: [
+            { label: "Lifecycle\u2026", icon: <RefreshCw size={ICON_SIZE} />, action: stub },
+            { label: "Semantic Memory\u2026", icon: <Database size={ICON_SIZE} />, action: stub },
+            { label: "Episodic Memory\u2026", icon: <BookOpen size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Social",
+          icon: <MessageCircle size={ICON_SIZE} />,
+          submenu: [
+            { label: "Communication\u2026", icon: <MessageSquare size={ICON_SIZE} />, action: stub },
+            { label: "Teaching\u2026", icon: <GraduationCap size={ICON_SIZE} />, action: stub },
+            { label: "Network Formation\u2026", icon: <Network size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Spawning",
+          icon: <Zap size={ICON_SIZE} />,
+          submenu: [
+            { label: "Distribution\u2026", icon: <MapPin size={ICON_SIZE} />, action: stub },
+            { label: "Seed\u2026", icon: <Dices size={ICON_SIZE} />, action: stub },
+          ],
+        },
+      ],
+    },
+    /* ── VIEW ── */
     {
       label: "View",
       items: [
         {
-          label: "Explorer Panel",
-          icon: <LayoutPanelLeft size={ICON_SIZE} />,
-          shortcut: "Ctrl+B",
-          checked: showExplorer,
-          action: onToggleExplorer,
+          label: "Panels",
+          icon: <PanelsTopLeft size={ICON_SIZE} />,
+          submenu: [
+            { label: "Explorer Panel", icon: <LayoutPanelLeft size={ICON_SIZE} />, shortcut: "Ctrl+B", checked: showExplorer, action: onToggleExplorer },
+            { label: "Inspector Panel", icon: <PanelRight size={ICON_SIZE} />, shortcut: "Ctrl+Shift+I", checked: showInspector, action: onToggleInspector },
+            { label: "Bottom Panel", icon: <PanelBottom size={ICON_SIZE} />, shortcut: "Ctrl+J", checked: showBottomPanel, action: onToggleBottomPanel },
+          ],
         },
         {
-          label: "Inspector Panel",
-          icon: <PanelRight size={ICON_SIZE} />,
-          checked: showInspector,
-          action: onToggleInspector,
+          label: "Maps",
+          icon: <Map size={ICON_SIZE} />,
+          submenu: [
+            { label: "2D Map", icon: <Map size={ICON_SIZE} />, action: stub },
+            { label: "2.5D Map", icon: <Layers size={ICON_SIZE} />, action: stub },
+            { label: "3D Globe", icon: <Globe size={ICON_SIZE} />, action: stub },
+          ],
         },
-        {
-          label: "Bottom Panel",
-          icon: <PanelBottom size={ICON_SIZE} />,
-          shortcut: "Ctrl+J",
-          checked: showBottomPanel,
-          action: onToggleBottomPanel,
-        },
+        { separator: true },
+        { label: "Weather Overlay", icon: <CloudSun size={ICON_SIZE} />, action: stub },
+        { label: "Connection Lines", icon: <Cable size={ICON_SIZE} />, action: stub },
+        { label: "Agent Labels", icon: <Tag size={ICON_SIZE} />, action: stub },
+        { label: "Agent Trajectories", icon: <Route size={ICON_SIZE} />, action: stub },
         { separator: true },
         {
           label: "Appearance",
           icon: <Palette size={ICON_SIZE} />,
           submenu: [
-            {
-              label: "Light",
-              icon: <Sun size={ICON_SIZE} />,
-              checked: themeMode === "light",
-              action: () => onThemeChange("light"),
-            },
-            {
-              label: "Dark",
-              icon: <Moon size={ICON_SIZE} />,
-              checked: themeMode === "dark",
-              action: () => onThemeChange("dark"),
-            },
-            {
-              label: "System",
-              icon: <Monitor size={ICON_SIZE} />,
-              checked: themeMode === "system",
-              action: () => onThemeChange("system"),
-            },
-            {
-              label: "Auto (Time of Day)",
-              icon: <Clock size={ICON_SIZE} />,
-              checked: themeMode === "auto",
-              action: () => onThemeChange("auto"),
-            },
+            { label: "Light", icon: <Sun size={ICON_SIZE} />, checked: themeMode === "light", action: () => onThemeChange("light") },
+            { label: "Dark", icon: <Moon size={ICON_SIZE} />, checked: themeMode === "dark", action: () => onThemeChange("dark") },
+            { label: "System", icon: <Monitor size={ICON_SIZE} />, checked: themeMode === "system", action: () => onThemeChange("system") },
+            { label: "Auto (Time of Day)", icon: <Clock size={ICON_SIZE} />, checked: themeMode === "auto", action: () => onThemeChange("auto") },
+          ],
+        },
+        { separator: true },
+        { label: "Terminal", icon: <Terminal size={ICON_SIZE} />, shortcut: "Ctrl+`", action: stub },
+      ],
+    },
+    /* ── TOOLS ── */
+    {
+      label: "Tools",
+      items: [
+        {
+          label: "Research",
+          icon: <FlaskConical size={ICON_SIZE} />,
+          submenu: [
+            { label: "Knowledge Inspector\u2026", icon: <BookOpen size={ICON_SIZE} />, action: stub },
+            { label: "Belief State Viewer\u2026", icon: <Brain size={ICON_SIZE} />, action: stub },
+            { label: "Q&A Testing\u2026", icon: <MessageSquare size={ICON_SIZE} />, action: stub },
+            { label: "Knowledge Gap Analysis\u2026", icon: <BarChart3 size={ICON_SIZE} />, action: stub },
+            { label: "Agent Comparison\u2026", icon: <ArrowLeftRight size={ICON_SIZE} />, action: stub },
+            { label: "Journey Replay\u2026", icon: <History size={ICON_SIZE} />, action: stub },
+            { label: "Social Network\u2026", icon: <Network size={ICON_SIZE} />, action: stub },
+            { label: "Readiness Evaluation\u2026", icon: <ClipboardCheck size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        { separator: true },
+        {
+          label: "Diagnostics",
+          icon: <Activity size={ICON_SIZE} />,
+          submenu: [
+            { label: "Earth Proxy Monitor\u2026", icon: <Activity size={ICON_SIZE} />, action: stub },
+            { label: "Data Feed Status\u2026", icon: <Radio size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        { separator: true },
+        {
+          label: "Export",
+          icon: <Download size={ICON_SIZE} />,
+          submenu: [
+            { label: "Locations as GeoJSON\u2026", icon: <FileJson size={ICON_SIZE} />, action: stub },
+            { label: "Agent History as CSV\u2026", icon: <FileSpreadsheet size={ICON_SIZE} />, action: stub },
+            { label: "World Snapshot as JSON\u2026", icon: <FileJson size={ICON_SIZE} />, action: stub },
+            { label: "Traces as JSON\u2026", icon: <FileJson size={ICON_SIZE} />, action: stub },
+            { label: "Map Screenshot\u2026", icon: <Camera size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        {
+          label: "Import",
+          icon: <Upload size={ICON_SIZE} />,
+          submenu: [
+            { label: "Agent Exploration Traces\u2026", icon: <FileUp size={ICON_SIZE} />, action: stub },
+          ],
+        },
+        { separator: true },
+        {
+          label: "Simulation Control",
+          icon: <SlidersHorizontal size={ICON_SIZE} />,
+          submenu: [
+            { label: "Start", icon: <Play size={ICON_SIZE} />, action: () => simControl("start"), disabled: !connected },
+            { label: "Pause", icon: <Pause size={ICON_SIZE} />, action: () => simControl("pause"), disabled: !connected },
+            { label: "Reset", icon: <RotateCcw size={ICON_SIZE} />, action: () => simControl("reset"), disabled: !connected },
+            { label: "Speed\u2026", icon: <Gauge size={ICON_SIZE} />, action: stub, disabled: !connected },
+          ],
+        },
+        {
+          label: "Force Refresh",
+          icon: <RefreshCw size={ICON_SIZE} />,
+          submenu: [
+            { label: "Weather", icon: <CloudSun size={ICON_SIZE} />, action: stub, disabled: !connected },
+            { label: "Wind", icon: <Wind size={ICON_SIZE} />, action: stub, disabled: !connected },
+            { label: "Astronomy", icon: <Star size={ICON_SIZE} />, action: stub, disabled: !connected },
+            { label: "Atmosphere", icon: <Cloud size={ICON_SIZE} />, action: stub, disabled: !connected },
+            { label: "Geography", icon: <MapPin size={ICON_SIZE} />, action: stub, disabled: !connected },
           ],
         },
       ],
     },
-    {
-      label: "World",
-      items: [
-        {
-          label: "Start",
-          icon: <Play size={ICON_SIZE} />,
-          action: () => simControl("start"),
-          disabled: !connected,
-        },
-        {
-          label: "Pause",
-          icon: <Pause size={ICON_SIZE} />,
-          action: () => simControl("pause"),
-          disabled: !connected,
-        },
-        {
-          label: "Reset",
-          icon: <RotateCcw size={ICON_SIZE} />,
-          action: () => simControl("reset"),
-          disabled: !connected,
-        },
-        { separator: true },
-        {
-          label: connected ? "Change Server\u2026" : "Connect to Server\u2026",
-          icon: connected ? <Wifi size={ICON_SIZE} /> : <WifiOff size={ICON_SIZE} />,
-          action: () => setShowConnectDialog(true),
-        },
-      ],
-    },
-    {
-      label: "Agents",
-      items: [
-        { label: "Show Labels", icon: <Eye size={ICON_SIZE} />, action: () => {}, disabled: !connected },
-        { label: "Hide Labels", icon: <EyeOff size={ICON_SIZE} />, action: () => {}, disabled: !connected },
-      ],
-    },
+    /* ── HELP ── */
     {
       label: "Help",
       items: [
-        { label: "About EarthLink", icon: <Info size={ICON_SIZE} />, action: () => {} },
+        { label: "Documentation", icon: <BookOpen size={ICON_SIZE} />, action: stub },
+        { separator: true },
+        { label: "Report a Bug\u2026", icon: <Bug size={ICON_SIZE} />, action: stub },
+        { label: "Request a Feature\u2026", icon: <Lightbulb size={ICON_SIZE} />, action: stub },
+        { separator: true },
+        { label: "Keyboard Shortcuts", icon: <Keyboard size={ICON_SIZE} />, action: stub },
+        { label: "About EarthLink", icon: <Info size={ICON_SIZE} />, action: stub },
       ],
     },
   ];

@@ -22,10 +22,16 @@ export default function MainViewport() {
   const connected = useConnectionStore((s) => s.connected);
   const connecting = useConnectionStore((s) => s.connecting);
   const retriesExhausted = useConnectionStore((s) => s.retriesExhausted);
+  const retryCancelled = useConnectionStore((s) => s.retryCancelled);
+  const retryCount = useConnectionStore((s) => s.retryCount);
   const error = useConnectionStore((s) => s.error);
   const connect = useConnectionStore((s) => s.connect);
+  const cancelRetry = useConnectionStore((s) => s.cancelRetry);
 
   const isGlobe = viewMode === "3d";
+
+  // Are we actively connecting or waiting between retries?
+  const isRetrying = !connecting && !retriesExhausted && !retryCancelled && retryCount > 0;
 
   return (
     <div
@@ -47,26 +53,29 @@ export default function MainViewport() {
             style={{ color: "var(--el-text-faint)", opacity: 0.4 }}
           />
 
-          {/* Status line */}
-          {connecting && (
-            <div className="flex items-center gap-2">
-              <Loader size={12} className="animate-spin" style={{ color: "var(--el-text-faint)" }} />
-              <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
-                Connecting to server...
+          {/* Actively connecting or between retries */}
+          {(connecting || isRetrying) && (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-2">
+                <Loader size={12} className="animate-spin" style={{ color: "var(--el-text-faint)" }} />
+                <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
+                  Connecting...
+                </span>
+              </div>
+              <span className="text-[10px]" style={{ color: "var(--el-text-faint)", opacity: 0.6 }}>
+                {retryCount > 0 ? `Attempt ${retryCount} of 5` : "Reaching server\u2026"}
               </span>
+              <button
+                onClick={cancelRetry}
+                className="text-[11px] cursor-default mt-1"
+                style={{ color: "var(--el-text-faint)", textDecoration: "underline", textUnderlineOffset: 2 }}
+              >
+                Cancel
+              </button>
             </div>
           )}
 
-          {!connecting && !retriesExhausted && error && (
-            <div className="flex items-center gap-2">
-              <Loader size={12} className="animate-spin" style={{ color: "var(--el-text-faint)" }} />
-              <span className="text-[11px]" style={{ color: "var(--el-text-faint)" }}>
-                Retrying...
-              </span>
-            </div>
-          )}
-
-          {/* Retries exhausted — offer manual retry as plain text link, not a big button */}
+          {/* Retries exhausted */}
           {retriesExhausted && (
             <div className="flex flex-col items-center gap-2">
               <div className="flex items-center gap-1.5">
@@ -80,6 +89,22 @@ export default function MainViewport() {
                   {error}
                 </span>
               )}
+              <button
+                onClick={() => connect()}
+                className="text-[11px] cursor-default mt-1"
+                style={{ color: "var(--el-text-accent)", textDecoration: "underline", textUnderlineOffset: 2 }}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* User cancelled */}
+          {retryCancelled && (
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[11px]" style={{ color: "var(--el-text-muted)" }}>
+                Connection cancelled
+              </span>
               <button
                 onClick={() => connect()}
                 className="text-[11px] cursor-default mt-1"

@@ -48,6 +48,9 @@
   --el-radius-md: 8px;
   --el-radius-lg: 12px;
 
+  /* Overlays */
+  --el-backdrop: rgba(0, 0, 0, 0.4);
+
   /* Sizing */
   --el-menubar-h: 2.5rem;
   --el-statusbar-h: 1.75rem;
@@ -92,6 +95,7 @@
   --el-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --el-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
   --el-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --el-backdrop: rgba(0, 0, 0, 0.6);
 }
 
 /* --- Base --- */
@@ -226,6 +230,28 @@ html, body, #root {
   transition: width 0.4s ease;
 }
 
+/* --- Action buttons (Inspector quick actions) --- */
+
+.el-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--el-radius-sm);
+  border: 1px solid var(--el-border-card);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--el-text-muted);
+  background: transparent;
+  cursor: default;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.el-action-btn:hover {
+  color: var(--el-text-accent);
+  border-color: var(--el-accent);
+  background: var(--el-accent-soft);
+}
+
 /* --- Section headers --- */
 
 .el-section-header {
@@ -265,6 +291,10 @@ html, body, #root {
 }
 
 /* --- MapLibre GL overrides --- */
+
+.maplibregl-popup {
+  z-index: 20 !important;
+}
 
 .maplibregl-popup-content {
   background: var(--el-bg-panel) !important;
