@@ -252,7 +252,9 @@ export const useSelectionStore = create<SelectionState>((set, get) => ({
         }),
       );
     }
-    if (event.atmosphere_updated) {
+    // Atmosphere mixes fetched AQ with weather/astronomy-derived values,
+    // so refresh whenever any of those upstream domains change.
+    if (event.atmosphere_updated || event.weather_updated || event.astronomy_updated) {
       fetches.push(
         client.getAtmosphere(locId).catch(() => null).then((a) => {
           if (get().kind === "location" && get().id === locId) {

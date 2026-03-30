@@ -14,6 +14,7 @@ import type {
   AgentEvent,
   AgentSummary,
   EarthProxyStatus,
+  EarthRotation,
   GeographyStats,
   RefreshStatus,
   TickEvent,
@@ -49,9 +50,15 @@ export interface WorldStoreState {
   // ALL agents — always in memory, rendered on the map in real time
   agents: AgentSummary[];
 
+  // Earth rotation (updated every tick from server)
+  rotation: EarthRotation | null;
+
   // Tick
   tickCount: number;
   lastAgentEvents: AgentEvent[];
+  earthProxyResolves: number;
+  dataFeedsUpdated: boolean;
+  agentPhaseExceeded: boolean;
 
   // Setters
   setWorldState: (state: WorldState) => void;
@@ -71,9 +78,13 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
   geographyStats: null,
   earthProxy: null,
   refresh: null,
+  rotation: null,
   agents: [],
   tickCount: 0,
   lastAgentEvents: [],
+  earthProxyResolves: 0,
+  dataFeedsUpdated: false,
+  agentPhaseExceeded: false,
 
   setWorldState: (state) =>
     set({
@@ -89,6 +100,7 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
       geographyStats: state.geography_stats ?? null,
       earthProxy: state.earth_proxy ?? null,
       refresh: state.refresh ?? null,
+      earthProxyResolves: state.earth_proxy?.total_resolves ?? get().earthProxyResolves,
       // World state also includes agent summaries
       agents: state.agents ?? get().agents,
     }),
@@ -107,7 +119,9 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
           ...updatedAgents[idx],
           location_id: ae.to_location_id,
           last_action: ae.action,
+          energy: ae.energy,
           knowledge_score: ae.knowledge_score,
+          visited_locations: ae.visited_count,
           last_reward: ae.reward,
           goal: ae.goal,
         };
@@ -117,7 +131,11 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
     set({
       time: event.time,
       tickCount: event.tick,
+      rotation: event.rotation ?? get().rotation,
       lastAgentEvents: event.agent_events,
+      earthProxyResolves: event.earth_proxy_resolves ?? get().earthProxyResolves,
+      dataFeedsUpdated: event.data_feeds_updated,
+      agentPhaseExceeded: event.agent_phase_exceeded ?? false,
       isRunning: true,
       agents: updatedAgents,
     });

@@ -281,18 +281,32 @@ export interface AgentEvent {
   knowledge_score: number;
   reward: number;
   q_value: number;
+  energy: number;
+  visited_count: number;
+  moved: boolean;
+  distance_km: number;
   goal: Record<string, unknown> | null;
+}
+
+export interface EarthRotation {
+  gmst_deg: number;
+  sub_solar_lat: number;
+  sub_solar_lng: number;
+  solar_declination_deg: number;
 }
 
 export interface TickEvent {
   tick: number;
   time: WorldTime;
+  rotation: EarthRotation;
   weather_updated: boolean;
   wind_updated: boolean;
   atmosphere_updated: boolean;
   astronomy_updated: boolean;
   data_feeds_updated: boolean;
   agent_events: AgentEvent[];
+  earth_proxy_resolves?: number;
+  agent_phase_exceeded?: boolean;
 }
 
 // --- Extended Agent Types (pending server support) ---

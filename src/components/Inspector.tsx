@@ -32,7 +32,6 @@ import {
   Sun,
   Sunrise,
   Sunset,
-  Globe,
   Orbit,
   Magnet,
   Waves,
@@ -52,7 +51,7 @@ import { useAgentHistoryStore } from "../store/agentHistoryStore";
 import { useWorldStore } from "../store/worldStore";
 import Sparkline from "./Sparkline";
 import { client } from "../api/client";
-import type { AgentDetail, Astronomy, AtmosphereData, GeophysicsData, Location, NearbyLocation, OrbitalData, SolarActivity, Weather, WindData, AgentAnswer } from "../api/types";
+import type { AgentDetail, Astronomy, AtmosphereData, GeophysicsData, Location, NearbyLocation, OrbitalData, Weather, WindData, AgentAnswer } from "../api/types";
 
 /* ---------- Collapsible card section ---------- */
 
@@ -613,16 +612,41 @@ function RealtimeChart({
   );
 }
 
+function useWorldNow(): Date {
+  const currentTime = useWorldStore((s) => s.time?.current_time ?? null);
+  const connected = useConnectionStore((s) => s.connected);
+  const isRunning = useWorldStore((s) => s.isRunning);
+  const [now, setNow] = useState(() => (currentTime ? new Date(currentTime) : new Date()));
+  const anchorRef = useRef<{ serverMs: number; wallMs: number } | null>(null);
+
+  useEffect(() => {
+    if (!currentTime) return;
+    const serverMs = new Date(currentTime).getTime();
+    anchorRef.current = { serverMs, wallMs: Date.now() };
+    setNow(new Date(serverMs));
+  }, [currentTime]);
+
+  useEffect(() => {
+    if (!connected || !isRunning || !anchorRef.current) return;
+    const id = window.setInterval(() => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      setNow(new Date(anchor.serverMs + (Date.now() - anchor.wallMs)));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [connected, isRunning, currentTime]);
+
+  return now;
+}
+
 /* ---------- Earth science computations ---------- */
 
 function computeEarthData(now: Date) {
   const dayOfYear = Math.floor((now.getTime() - new Date(now.getUTCFullYear(), 0, 0).getTime()) / 86400000);
   const hourFrac = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
 
-  // Solar declination (degrees) — varies ±23.44° over the year
   const declination = -23.44 * Math.cos((2 * Math.PI * (dayOfYear + 10)) / 365);
 
-  // Solar elevation for reference latitude (53°N — center of UK/Ireland)
   const refLat = 53;
   const latRad = (refLat * Math.PI) / 180;
   const decRad = (declination * Math.PI) / 180;
@@ -630,25 +654,19 @@ function computeEarthData(now: Date) {
   const solarElevation =
     (Math.asin(Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(hourAngle)) * 180) / Math.PI;
 
-  // UV Index — rough estimate from solar elevation
   const uvIndex = solarElevation > 0 ? Math.max(0, Math.round(solarElevation / 10)) : 0;
 
-  // Day length at reference latitude (hours)
   const cosHA = -Math.tan(latRad) * Math.tan(decRad);
   const dayLength = cosHA >= 1 ? 0 : cosHA <= -1 ? 24 : (2 * Math.acos(cosHA) * 12) / Math.PI;
 
-  // Earth-Sun distance (km) — perihelion ~Jan 3, aphelion ~Jul 4
   const perihelionDay = 3;
   const distPhase = (2 * Math.PI * (dayOfYear - perihelionDay)) / 365;
-  const earthSunDist = 149598023 * (1 + 0.0167 * Math.cos(distPhase)); // km
+  const earthSunDist = 149598023 * (1 + 0.0167 * Math.cos(distPhase));
 
-  // Orbital speed (km/s) — slightly faster at perihelion
   const orbitalSpeed = 29.78 * (1 + 0.0167 * Math.cos(distPhase));
 
-  // Earth rotation speed at reference latitude (km/h)
   const rotationSpeed = 1674.4 * Math.cos(latRad);
 
-  // Orbital position (degrees around the sun, 0° = vernal equinox ~Mar 20)
   const vernalEquinoxDay = 79;
   const orbitalPosition = ((dayOfYear - vernalEquinoxDay) / 365) * 360;
 
@@ -657,12 +675,124 @@ function computeEarthData(now: Date) {
     solarDeclination: Math.round(declination * 10) / 10,
     uvIndex,
     dayLength: Math.round(dayLength * 10) / 10,
-    earthSunDist: Math.round(earthSunDist / 1000), // thousands of km → millions
+    earthSunDist: Math.round(earthSunDist / 1000),
     orbitalSpeed: Math.round(orbitalSpeed * 100) / 100,
     rotationSpeed: Math.round(rotationSpeed),
     orbitalPosition: Math.round(((orbitalPosition % 360) + 360) % 360),
     isDaytime: solarElevation > 0,
   };
+}
+
+/* ---------- SVG: Orbital Position Diagram ---------- */
+
+function OrbitalDiagram({ position }: { position: number }) {
+  const S = 96;
+  const CX = S / 2, CY = S / 2, R = 34;
+  const rad = ((position - 90) * Math.PI) / 180;
+  const ex = CX + R * Math.cos(rad);
+  const ey = CY + R * Math.sin(rad);
+  const seasons = [
+    { deg: 0, label: "VE" },
+    { deg: 90, label: "SS" },
+    { deg: 180, label: "AE" },
+    { deg: 270, label: "WS" },
+  ];
+
+  return (
+    <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} className="shrink-0">
+      <circle cx={CX} cy={CY} r={R} fill="none"
+        stroke="var(--el-border-subtle)" strokeWidth={1} strokeDasharray="3,2" />
+      {seasons.map((s) => {
+        const a = ((s.deg - 90) * Math.PI) / 180;
+        const tx = CX + (R + 11) * Math.cos(a);
+        const ty = CY + (R + 11) * Math.sin(a);
+        return (
+          <text key={s.label} x={tx} y={ty + 3} fontSize={8}
+            fill="var(--el-text-muted)" textAnchor="middle">{s.label}</text>
+        );
+      })}
+      <circle cx={CX} cy={CY} r={8} fill="var(--el-warning)" opacity={0.15}>
+        <animate attributeName="r" values="8;11;8" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.15;0.06;0.15" dur="3s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={CX} cy={CY} r={5} fill="var(--el-warning)" opacity={0.6} />
+      <circle cx={ex} cy={ey} r={5} fill="var(--el-info)" opacity={0.2}>
+        <animate attributeName="opacity" values="0.2;0.08;0.2" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={ex} cy={ey} r={3} fill="var(--el-info)" />
+    </svg>
+  );
+}
+
+/* ---------- SVG: Sub-Solar Point Map ---------- */
+
+function SubSolarMap({ subSolarLat, subSolarLng }: { subSolarLat: number; subSolarLng: number }) {
+  const W = 260, H = 92;
+  const PX = 8, PY = 8;
+  const mapW = W - PX * 2, mapH = H - PY * 2;
+  const x = PX + ((subSolarLng + 180) / 360) * mapW;
+  const y = PY + ((90 - subSolarLat) / 180) * mapH;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block" style={{ marginTop: 4 }}>
+      <rect x={PX} y={PY} width={mapW} height={mapH} rx={6}
+        fill="var(--el-bg-panel)" stroke="var(--el-border-subtle)" strokeWidth={1} />
+      {[0.25, 0.5, 0.75].map((t) => (
+        <line key={`lon-${t}`} x1={PX + mapW * t} y1={PY} x2={PX + mapW * t} y2={PY + mapH}
+          stroke="var(--el-border-subtle)" strokeWidth={0.5} strokeDasharray="3,3" />
+      ))}
+      {[0.25, 0.5, 0.75].map((t) => (
+        <line key={`lat-${t}`} x1={PX} y1={PY + mapH * t} x2={PX + mapW} y2={PY + mapH * t}
+          stroke="var(--el-border-subtle)" strokeWidth={0.5} strokeDasharray="3,3" />
+      ))}
+      <line x1={PX} y1={PY + mapH / 2} x2={PX + mapW} y2={PY + mapH / 2}
+        stroke="var(--el-text-faint)" strokeWidth={0.7} opacity={0.65} />
+      <line x1={PX + mapW / 2} y1={PY} x2={PX + mapW / 2} y2={PY + mapH}
+        stroke="var(--el-text-faint)" strokeWidth={0.7} opacity={0.65} />
+      <circle cx={x} cy={y} r={7} fill="var(--el-warning)" opacity={0.12}>
+        <animate attributeName="r" values="7;10;7" dur="2.5s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.12;0.04;0.12" dur="2.5s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={x} cy={y} r={3} fill="var(--el-warning)" />
+      <text x={PX + 2} y={PY + 9} fontSize={8} fill="var(--el-text-faint)">90°N</text>
+      <text x={PX + 2} y={PY + mapH / 2 - 2} fontSize={8} fill="var(--el-text-faint)">0°</text>
+      <text x={PX + 2} y={PY + mapH - 2} fontSize={8} fill="var(--el-text-faint)">90°S</text>
+      <text x={PX} y={H - 2} fontSize={8} fill="var(--el-text-faint)">180°W</text>
+      <text x={PX + mapW / 2} y={H - 2} fontSize={8} fill="var(--el-text-faint)" textAnchor="middle">0°</text>
+      <text x={PX + mapW} y={H - 2} fontSize={8} fill="var(--el-text-faint)" textAnchor="end">180°E</text>
+    </svg>
+  );
+}
+
+/* ---------- SVG: Solar Declination Track ---------- */
+
+function DeclinationTrack({ declination }: { declination: number }) {
+  const W = 260, H = 54;
+  const PX = 16, lineY = 18, trackW = W - PX * 2;
+  const x = PX + ((declination + 23.44) / (23.44 * 2)) * trackW;
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block" style={{ marginTop: 4 }}>
+      <line x1={PX} y1={lineY} x2={PX + trackW} y2={lineY}
+        stroke="var(--el-border-subtle)" strokeWidth={3} strokeLinecap="round" />
+      <line x1={PX + trackW / 2} y1={lineY - 7} x2={PX + trackW / 2} y2={lineY + 7}
+        stroke="var(--el-text-faint)" strokeWidth={1} />
+      <line x1={PX} y1={lineY - 5} x2={PX} y2={lineY + 5}
+        stroke="var(--el-text-faint)" strokeWidth={1} />
+      <line x1={PX + trackW} y1={lineY - 5} x2={PX + trackW} y2={lineY + 5}
+        stroke="var(--el-text-faint)" strokeWidth={1} />
+      <circle cx={x} cy={lineY} r={6} fill="var(--el-warning)" opacity={0.15}>
+        <animate attributeName="r" values="6;8;6" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx={x} cy={lineY} r={3} fill="var(--el-warning)" />
+      <text x={PX} y={H - 20} fontSize={8} fill="var(--el-text-muted)">23.4°S</text>
+      <text x={PX + trackW / 2} y={H - 20} fontSize={8} fill="var(--el-text-muted)" textAnchor="middle">Equator</text>
+      <text x={PX + trackW} y={H - 20} fontSize={8} fill="var(--el-text-muted)" textAnchor="end">23.4°N</text>
+      <text x={x} y={H - 4} fontSize={9} fill="var(--el-text)" textAnchor="middle" fontWeight="600">
+        {declination >= 0 ? "+" : ""}{declination.toFixed(2)}°
+      </text>
+    </svg>
+  );
 }
 
 /* ---------- SVG: 24-hour Solar Elevation Curve ---------- */
@@ -742,92 +872,6 @@ function SolarCurve({ dayOfYear, hourFrac, elevation, isDaytime, lat = 53, idPre
 
 /* ---------- SVG: Atmosphere Composition Bar ---------- */
 
-function AtmosphereChart() {
-  const W = 260, H = 38;
-  const BAR_Y = 6, BAR_H = 14, R = 4, PX = 4;
-  const barW = W - PX * 2;
-  const gases = [
-    { name: "N₂", pct: 78.09, color: "var(--el-info)" },
-    { name: "O₂", pct: 20.95, color: "var(--el-success)" },
-    { name: "Ar", pct: 0.93, color: "var(--el-text-muted)" },
-  ];
-  let x = PX;
-  const segs = gases.map((g) => {
-    const w = Math.max(6, (g.pct / 100) * barW);
-    const seg = { ...g, x, w };
-    x += w;
-    return seg;
-  });
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block" style={{ marginTop: 4 }}>
-      <defs>
-        <clipPath id="el-atmo-clip">
-          <rect x={PX} y={BAR_Y} width={barW} height={BAR_H} rx={R} />
-        </clipPath>
-      </defs>
-      <rect x={PX} y={BAR_Y} width={barW} height={BAR_H} rx={R}
-        fill="var(--el-border-subtle)" />
-      <g clipPath="url(#el-atmo-clip)">
-        {segs.map((s, i) => (
-          <rect key={s.name} x={s.x} y={BAR_Y} width={s.w} height={BAR_H}
-            fill={s.color} opacity={0.65}>
-            <animate attributeName="opacity" values="0.65;0.45;0.65"
-              dur={`${3 + i * 0.7}s`} repeatCount="indefinite" />
-          </rect>
-        ))}
-      </g>
-      {segs.filter((s) => s.w > 18).map((s) => (
-        <text key={s.name} x={s.x + s.w / 2} y={BAR_Y + BAR_H + 12}
-          fontSize={9} fill="var(--el-text-muted)" textAnchor="middle">
-          {s.name} {s.pct}%
-        </text>
-      ))}
-    </svg>
-  );
-}
-
-/* ---------- SVG: Orbital Position Diagram ---------- */
-
-function OrbitalDiagram({ position }: { position: number }) {
-  const S = 96;
-  const CX = S / 2, CY = S / 2, R = 34;
-  const rad = ((position - 90) * Math.PI) / 180;
-  const ex = CX + R * Math.cos(rad);
-  const ey = CY + R * Math.sin(rad);
-  const seasons = [
-    { deg: 0, label: "VE" },
-    { deg: 90, label: "SS" },
-    { deg: 180, label: "AE" },
-    { deg: 270, label: "WS" },
-  ];
-
-  return (
-    <svg width={S} height={S} viewBox={`0 0 ${S} ${S}`} className="shrink-0">
-      <circle cx={CX} cy={CY} r={R} fill="none"
-        stroke="var(--el-border-subtle)" strokeWidth={1} strokeDasharray="3,2" />
-      {seasons.map((s) => {
-        const a = ((s.deg - 90) * Math.PI) / 180;
-        const tx = CX + (R + 11) * Math.cos(a);
-        const ty = CY + (R + 11) * Math.sin(a);
-        return (
-          <text key={s.label} x={tx} y={ty + 3} fontSize={8}
-            fill="var(--el-text-muted)" textAnchor="middle">{s.label}</text>
-        );
-      })}
-      <circle cx={CX} cy={CY} r={8} fill="var(--el-warning)" opacity={0.15}>
-        <animate attributeName="r" values="8;11;8" dur="3s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.15;0.06;0.15" dur="3s" repeatCount="indefinite" />
-      </circle>
-      <circle cx={CX} cy={CY} r={5} fill="var(--el-warning)" opacity={0.6} />
-      <circle cx={ex} cy={ey} r={5} fill="var(--el-info)" opacity={0.2}>
-        <animate attributeName="opacity" values="0.2;0.08;0.2" dur="2s" repeatCount="indefinite" />
-      </circle>
-      <circle cx={ex} cy={ey} r={3} fill="var(--el-info)" />
-    </svg>
-  );
-}
-
 /* ---------- SVG: Arc Gauge ---------- */
 
 function ArcGauge({ cx, cy, r, value, max, color, label, unit }: {
@@ -895,108 +939,52 @@ function ArcGauge({ cx, cy, r, value, max, color, label, unit }: {
   );
 }
 
-/* ---------- SVG: Geophysics Arc Gauges ---------- */
-
-function GeophysicsGauges({ rotationSpeed, now }: { rotationSpeed: number; now: Date }) {
-  const W = 260, H = 70;
-  const gaugeR = 18;
-  const t = now.getTime();
-  const magField = Math.round((45 + Math.sin(t / 3000) * 3) * 10) / 10;
-  const gravity = Math.round((9.807 + Math.sin(t / 7000) * 0.003) * 1000) / 1000;
-  const gauges = [
-    { value: gravity, max: 12, color: "var(--el-info)", label: "Gravity", unit: "m/s²" },
-    { value: magField, max: 65, color: "var(--el-accent)", label: "Mag Field", unit: "µT" },
-    { value: rotationSpeed, max: 1674, color: "var(--el-success)", label: "Rotation", unit: "km/h" },
-  ];
-  const spacing = W / gauges.length;
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block" style={{ marginTop: 2 }}>
-      {gauges.map((g, i) => (
-        <ArcGauge key={g.label}
-          cx={spacing * i + spacing / 2} cy={28} r={gaugeR}
-          value={g.value} max={g.max} color={g.color}
-          label={g.label} unit={g.unit}
-        />
-      ))}
-    </svg>
-  );
-}
-
-/* ---------- SVG: Land/Water Stacked Bar ---------- */
-
-function LandWaterBar() {
-  const W = 260, H = 32;
-  const BAR_Y = 6, BAR_H = 12, R = 4, PX = 4;
-  const barW = W - PX * 2;
-  const landW = barW * 0.292;
-
-  return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} className="block" style={{ marginTop: 4 }}>
-      <defs>
-        <clipPath id="el-planet-clip">
-          <rect x={PX} y={BAR_Y} width={barW} height={BAR_H} rx={R} />
-        </clipPath>
-      </defs>
-      <rect x={PX} y={BAR_Y} width={barW} height={BAR_H} rx={R}
-        fill="var(--el-info)" opacity={0.4}>
-        <animate attributeName="opacity" values="0.4;0.28;0.4" dur="5s" repeatCount="indefinite" />
-      </rect>
-      <g clipPath="url(#el-planet-clip)">
-        <rect x={PX} y={BAR_Y} width={landW} height={BAR_H}
-          fill="var(--el-success)" opacity={0.6}>
-          <animate attributeName="opacity" values="0.6;0.45;0.6" dur="4s" repeatCount="indefinite" />
-        </rect>
-      </g>
-      <text x={PX + landW / 2} y={BAR_Y + BAR_H + 10} fontSize={9}
-        fill="var(--el-text-muted)" textAnchor="middle">Land 29.2%</text>
-      <text x={PX + landW + (barW - landW) / 2} y={BAR_Y + BAR_H + 10} fontSize={9}
-        fill="var(--el-text-muted)" textAnchor="middle">Water 70.8%</text>
-    </svg>
-  );
-}
-
-/* ---------- Earth Dashboard (Inspector empty state) ---------- */
+/* ---------- Earth Dashboard (Inspector default — Earth overview) ---------- */
 
 function EarthDashboard() {
-  const [now, setNow] = useState(() => new Date());
+  const connected = useConnectionStore((s) => s.connected);
+  const isRunning = useWorldStore((s) => s.isRunning);
+  const time = useWorldStore((s) => s.time);
+  const rotation = useWorldStore((s) => s.rotation);
+  const now = useWorldNow();
   const [orbital, setOrbital] = useState<OrbitalData | null>(null);
-  const [solar, setSolar] = useState<SolarActivity | null>(null);
 
   useEffect(() => {
-    // Fetch immediately
-    client.getOrbital().then(setOrbital).catch(() => {});
-    client.getSolarActivity().then(setSolar).catch(() => {});
+    if (!connected) return;
+    let cancelled = false;
+    let inFlight = false;
 
-    // Orbital: refresh every 10 seconds (changes slowly)
-    const orbitalId = setInterval(() => {
-      client.getOrbital().then(setOrbital).catch(() => {});
-    }, 10_000);
+    const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const nextOrbital = await client.getOrbital().catch(() => null);
+        if (cancelled) return;
+        setOrbital(nextOrbital);
+      } finally {
+        inFlight = false;
+      }
+    };
 
-    // Solar activity: refresh every 60 seconds
-    const solarId = setInterval(() => {
-      client.getSolarActivity().then(setSolar).catch(() => {});
-    }, 60_000);
+    void load();
 
-    // Clock: every second
-    const clockId = setInterval(() => setNow(new Date()), 1000);
+    if (!isRunning) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const intervalId = window.setInterval(() => {
+      void load();
+    }, 1000);
 
     return () => {
-      clearInterval(orbitalId);
-      clearInterval(solarId);
-      clearInterval(clockId);
+      cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, []);
+  }, [connected, isRunning]);
 
-  // Client-computed values for solar curve and geophysics gauges
   const earth = computeEarthData(now);
-  const dayOfYear = Math.floor(
-    (now.getTime() - new Date(now.getUTCFullYear(), 0, 0).getTime()) / 86400000
-  );
-  const hourFrac =
-    now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
-
-  // Prefer server orbital data when available, fall back to client-computed
   const orbPos = orbital?.orbital_position_deg ?? earth.orbitalPosition;
   const orbDist = orbital ? orbital.earth_sun_distance_km / 1e6 : earth.earthSunDist / 1000;
   const orbSpeed = orbital?.orbital_speed_kms ?? earth.orbitalSpeed;
@@ -1005,45 +993,73 @@ function EarthDashboard() {
   const orbSeasonProgress = orbital?.season_progress ?? null;
   const orbNextEvent = orbital?.next_event ?? null;
   const orbDaysToEvent = orbital?.days_to_next_event ?? null;
-
-  // Kp color
-  const kpColor = solar?.kp_index != null
-    ? solar.kp_index < 2 ? "var(--el-success)"
-    : solar.kp_index < 4 ? "var(--el-warning)"
-    : solar.kp_index < 5 ? "var(--el-danger)"
-    : "var(--el-danger)"
-    : "var(--el-text-muted)";
-
+  const orbDaysToPerihelion = orbital?.days_to_perihelion ?? null;
+  const orbDistanceAu = orbital?.earth_sun_distance_au ?? null;
+  const declination = rotation?.solar_declination_deg ?? orbital?.solar_declination_deg ?? earth.solarDeclination;
+  const utcTime = now.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  });
+  const utcDate = time?.current_time
+    ? new Date(time.current_time).toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      })
+    : null;
+  const julianDay = now.getTime() / 86400000 + 2440587.5;
   return (
     <>
-      <CardSection title="Solar" icon={<Sun size={10} />}>
-        <SolarCurve dayOfYear={dayOfYear} hourFrac={hourFrac}
-          elevation={earth.solarElevation} isDaytime={earth.isDaytime} lat={53} idPrefix="el-solar-earth" />
-        <div className="flex items-center justify-between mt-2 text-[10px]"
-          style={{ color: "var(--el-text-muted)" }}>
-          <span>Elev <AnimNum value={earth.solarElevation} suffix="°" duration={900}
-            style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
-          <span>UV <AnimNum value={earth.uvIndex} decimals={0} duration={900}
-            style={{ color: earth.uvIndex >= 6 ? "var(--el-danger)" : "var(--el-text)", fontWeight: 600 }} /></span>
-          <span>Day <AnimNum value={earth.dayLength} suffix="h" duration={900}
-            style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+      <CardSection title="Time" icon={<Clock size={10} />}>
+        <div className="flex items-baseline justify-between pt-1">
+          <span className="text-lg font-bold tabular-nums tracking-tight" style={{ color: "var(--el-text)" }}>
+            {utcTime}
+          </span>
+          <span className="text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+            UTC
+          </span>
+        </div>
+        {utcDate && (
+          <div className="mt-0.5 text-[10px]" style={{ color: "var(--el-text-faint)" }}>
+            {utcDate}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+          <div>Season <b style={{ color: "var(--el-text)" }}>{time?.season ?? "—"}</b></div>
+          <div>Day of Year <b style={{ color: "var(--el-text)" }}>
+            {Math.floor((now.getTime() - new Date(now.getUTCFullYear(), 0, 0).getTime()) / 86400000)}
+          </b></div>
+          <div>Julian Day <b style={{ color: "var(--el-text)" }}>{julianDay.toFixed(2)}</b></div>
+          <div>Year <b style={{ color: "var(--el-text)" }}>{now.getUTCFullYear()}</b></div>
         </div>
       </CardSection>
 
-      <CardSection title="Atmosphere" icon={<Waves size={10} />}>
-        <AtmosphereChart />
-        <div className="flex items-center justify-between mt-1 text-[10px]"
-          style={{ color: "var(--el-text-muted)" }}>
-          <span>CO₂ <b style={{ color: "var(--el-warning)" }}>425 ppm</b></span>
-          <span>Pressure <b style={{ color: "var(--el-text)" }}>1013.25 hPa</b></span>
-        </div>
-      </CardSection>
+      {rotation && (
+        <CardSection title="Rotation" icon={<Compass size={10} />}>
+          <SubSolarMap subSolarLat={rotation.sub_solar_lat} subSolarLng={rotation.sub_solar_lng} />
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+            <div>GMST <AnimNum value={rotation.gmst_deg} decimals={2} suffix="°" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            <div>Declination <AnimNum value={rotation.solar_declination_deg} decimals={2} suffix="°" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            <div>Sub-Solar Lat <AnimNum value={rotation.sub_solar_lat} decimals={2} suffix="°" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            <div>Sub-Solar Lng <AnimNum value={rotation.sub_solar_lng} decimals={2} suffix="°" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+          </div>
+        </CardSection>
+      )}
 
       <CardSection title="Orbital" icon={<Orbit size={10} />}>
         <div className="flex items-center gap-3">
           <OrbitalDiagram position={orbPos} />
           <div className="flex-1 text-[10px] space-y-1.5" style={{ color: "var(--el-text-muted)" }}>
-            <div>Distance <AnimNum value={orbDist} suffix="M km" duration={900}
+            <div>Distance <AnimNum value={orbDist} suffix=" M km" duration={900}
               style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
             <div>Speed <AnimNum value={orbSpeed} decimals={2} suffix=" km/s" duration={900}
               style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
@@ -1065,43 +1081,56 @@ function EarthDashboard() {
         )}
       </CardSection>
 
-      {solar && (
-        <CardSection title="Space Weather" icon={<Zap size={10} />}>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
-            {solar.kp_index != null && (
-              <div>Kp Index <b style={{ color: kpColor }}>{solar.kp_index}</b>
-                <span className="ml-1 opacity-60">{solar.kp_category}</span></div>
-            )}
-            {solar.solar_wind_speed_kms != null && (
-              <div>Solar Wind <b style={{ color: "var(--el-text)" }}>{solar.solar_wind_speed_kms}</b> km/s</div>
-            )}
-            {solar.solar_wind_density != null && (
-              <div>Density <b style={{ color: "var(--el-text)" }}>{solar.solar_wind_density}</b> p/cm³</div>
-            )}
-            {solar.bt_nt != null && (
-              <div>IMF Bt <b style={{ color: "var(--el-text)" }}>{solar.bt_nt}</b> nT</div>
-            )}
-            {solar.bz_gsm_nt != null && (
-              <div>IMF Bz <b style={{ color: solar.bz_gsm_nt < 0 ? "var(--el-danger)" : "var(--el-success)" }}>
-                {solar.bz_gsm_nt}</b> nT</div>
-            )}
-            {solar.xray_class != null && (
-              <div>X-ray <b style={{ color: "var(--el-text)" }}>{solar.xray_class}</b>-class</div>
-            )}
+      <CardSection title="Seasons" icon={<Sun size={10} />}>
+        <DeclinationTrack declination={declination} />
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+          <div>Declination <AnimNum value={declination} decimals={2} suffix="°" duration={900}
+            style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+          <div>Sub-Solar Lat <AnimNum value={rotation?.sub_solar_lat ?? declination} decimals={2} suffix="°" duration={900}
+            style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+          {orbSeason && (
+            <div>Season <b style={{ color: "var(--el-text)" }}>{orbSeason}</b></div>
+          )}
+          {orbSeasonProgress != null && (
+            <div>Progress <b style={{ color: "var(--el-text)" }}>{Math.round(orbSeasonProgress * 100)}%</b></div>
+          )}
+        </div>
+        {(orbNextEvent && orbDaysToEvent != null) && (
+          <div className="mt-2 text-[9px]" style={{ color: "var(--el-text-faint)" }}>
+            {orbNextEvent} in {Math.round(orbDaysToEvent)} days
           </div>
-        </CardSection>
-      )}
-
-      <CardSection title="Geophysics" icon={<Magnet size={10} />}>
-        <GeophysicsGauges rotationSpeed={earth.rotationSpeed} now={now} />
+        )}
       </CardSection>
 
-      <CardSection title="Planet" icon={<Globe size={10} />}>
-        <LandWaterBar />
-        <div className="flex items-center justify-between mt-1 text-[10px]"
-          style={{ color: "var(--el-text-muted)" }}>
-          <span>Radius <b style={{ color: "var(--el-text)" }}>6,371 km</b></span>
-          <span>Age <b style={{ color: "var(--el-text)" }}>4.54 Gyr</b></span>
+      <CardSection title="Earth-Sun" icon={<Sun size={10} />}>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+          <div>Distance
+            <span> <AnimNum value={orbDist} decimals={2} suffix=" M km" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+          </div>
+          {orbDistanceAu != null && (
+            <div>AU
+              <span> <AnimNum value={orbDistanceAu} decimals={6} duration={900}
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+            </div>
+          )}
+          <div>Speed
+            <span> <AnimNum value={orbSpeed} decimals={2} suffix=" km/s" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+          </div>
+          <div>Tilt
+            <span> <AnimNum value={orbTilt} decimals={2} suffix="°" duration={900}
+              style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+          </div>
+          {orbDaysToPerihelion != null && (
+            <div>Perihelion
+              <span> <AnimNum value={orbDaysToPerihelion} decimals={1} suffix=" d" duration={900}
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></span>
+            </div>
+          )}
+          {orbital?.eccentricity != null && (
+            <div>Eccentricity <b style={{ color: "var(--el-text)" }}>{orbital.eccentricity.toFixed(4)}</b></div>
+          )}
         </div>
       </CardSection>
     </>

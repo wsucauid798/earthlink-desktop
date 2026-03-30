@@ -109,3 +109,7 @@ The desktop app communicates with the EarthLink backend through:
 
 - **REST API** — World state, location queries, agent details, weather/astronomy/geophysics data, simulation control
 - **WebSocket** (`/ws/world`) — Streaming tick events for real-time agent movement and world state updates with auto-reconnect and exponential backoff
+
+## License
+
+[MIT](LICENSE)
