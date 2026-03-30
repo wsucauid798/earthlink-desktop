@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { client } from "../api/client";
+import { agentActionLabel, normalizeAgentAction } from "../lib/agentAction";
 import { useWorldStore } from "../store/worldStore";
 import { useSelectionStore } from "../store/selectionStore";
 import { useConnectionStore } from "../store/connectionStore";
@@ -394,7 +395,7 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         const coords = (feat.geometry as GeoJSON.Point).coordinates.slice() as [number, number];
         const { name, location_name, action } = feat.properties as Record<string, string>;
         const locLine = location_name ? `at <strong>${location_name}</strong>` : "";
-        const actionVerb = action ? action.split(":")[0] : "";
+        const actionVerb = agentActionLabel(action, "");
         const actionLine = actionVerb ? `· ${actionVerb}` : "";
         agentPopup
           .setLngLat(coords)
@@ -483,7 +484,7 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
           agent_id: agent.id,
           name: agent.name,
           location_name: locationNameLookup.get(agent.location_id) ?? agent.location_name ?? "",
-          action: agent.last_action,
+          action: normalizeAgentAction(agent.last_action, ""),
           energy: agent.energy,
           knowledge_score: agent.knowledge_score,
         },

@@ -24,7 +24,7 @@ import { useResizable } from "./hooks/useResizable";
 import { useConnectionStore } from "./store/connectionStore";
 import MenuBar from "./components/MenuBar";
 import Explorer from "./components/Explorer";
-import Inspector from "./components/Inspector";
+import Inspector from "./components/inspector";
 import ViewportTabs from "./components/ViewportTabs";
 import ViewportContent from "./components/ViewportContent";
 import BottomPanel from "./components/BottomPanel";

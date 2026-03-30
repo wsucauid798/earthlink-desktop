@@ -11,6 +11,7 @@ import type {
   AgentSummary,
   Astronomy,
   AtmosphereData,
+  EarthRotation,
   GeophysicsData,
   Location,
   NearbyLocation,
@@ -124,6 +125,10 @@ export class EarthLinkClient {
 
   getOrbital(): Promise<OrbitalData> {
     return this.get("/api/orbital");
+  }
+
+  getRotation(): Promise<EarthRotation> {
+    return this.get("/api/rotation");
   }
 
   // --- Data Feeds ---

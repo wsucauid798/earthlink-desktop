@@ -10,6 +10,7 @@
  */
 
 import { create } from "zustand";
+import { normalizeAgentAction, withNormalizedAgentAction } from "../lib/agentAction";
 import type {
   AgentEvent,
   AgentSummary,
@@ -102,10 +103,13 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
       refresh: state.refresh ?? null,
       earthProxyResolves: state.earth_proxy?.total_resolves ?? get().earthProxyResolves,
       // World state also includes agent summaries
-      agents: state.agents ?? get().agents,
+      agents: (state.agents ?? get().agents).map(withNormalizedAgentAction),
     }),
 
-  setAgents: (agents) => set({ agents, agentCount: agents.length }),
+  setAgents: (agents) => set({
+    agents: agents.map(withNormalizedAgentAction),
+    agentCount: agents.length,
+  }),
 
   handleTick: (event) => {
     const { agents } = get();
@@ -118,7 +122,7 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
         updatedAgents[idx] = {
           ...updatedAgents[idx],
           location_id: ae.to_location_id,
-          last_action: ae.action,
+          last_action: normalizeAgentAction(ae.action),
           energy: ae.energy,
           knowledge_score: ae.knowledge_score,
           visited_locations: ae.visited_count,

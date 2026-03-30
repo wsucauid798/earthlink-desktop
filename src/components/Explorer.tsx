@@ -5,7 +5,6 @@
  * No redundancy with other panels. Empty sections are hidden.
  */
 
-import { useEffect, useState } from "react";
 import {
   Globe,
   Bot,
@@ -23,6 +22,7 @@ import {
   Droplets,
   Orbit,
 } from "lucide-react";
+import { useWorldNow } from "../hooks/useWorldNow";
 import { useWorldStore } from "../store/worldStore";
 import { useConnectionStore } from "../store/connectionStore";
 
@@ -87,17 +87,15 @@ export default function Explorer() {
     geographyStats,
   } = useWorldStore();
 
-  // Real-time ticking clock — updates every second
-  const [clockTime, setClockTime] = useState(() => new Date());
-  useEffect(() => {
-    if (!connected) return;
-    const id = setInterval(() => setClockTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, [connected]);
-
-  const hours = connected ? String(clockTime.getUTCHours()).padStart(2, "0") : "--";
-  const minutes = connected ? String(clockTime.getUTCMinutes()).padStart(2, "0") : "--";
-  const seconds = connected ? String(clockTime.getUTCSeconds()).padStart(2, "0") : "--";
+  const now = useWorldNow();
+  const hours = connected ? String(now.getUTCHours()).padStart(2, "0") : "--";
+  const minutes = connected ? String(now.getUTCMinutes()).padStart(2, "0") : "--";
+  const seconds = connected ? String(now.getUTCSeconds()).padStart(2, "0") : "--";
+  const utcYear = now.getUTCFullYear();
+  const dayOfYear = Math.floor(
+    (Date.UTC(utcYear, now.getUTCMonth(), now.getUTCDate()) - Date.UTC(utcYear, 0, 0)) / 86400000,
+  );
+  const julianDay = now.getTime() / 86400000 + 2440587.5;
 
   // Full date from server time (authoritative world date)
   let fullDate = "";
@@ -137,6 +135,11 @@ export default function Explorer() {
                   </span>
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+                <div>Day of Year <b style={{ color: "var(--el-text)" }}>{dayOfYear}</b></div>
+                <div>Julian Day <b style={{ color: "var(--el-text)" }}>{julianDay.toFixed(2)}</b></div>
+                <div>Year <b style={{ color: "var(--el-text)" }}>{utcYear}</b></div>
+              </div>
             </div>
 
             {/* Simulation status */}

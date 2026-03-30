@@ -19,6 +19,7 @@ import {
   Navigation,
 } from "lucide-react";
 import { client } from "../api/client";
+import { agentActionLabel } from "../lib/agentAction";
 import { useSelectionStore } from "../store/selectionStore";
 import type { AgentSummary, Location } from "../api/types";
 
@@ -301,7 +302,7 @@ export default function MapSearch() {
                     </div>
                   </div>
                   <span className="el-badge el-badge-muted" style={{ fontSize: "9px" }}>
-                    {agent.last_action}
+                    {agentActionLabel(agent.last_action)}
                   </span>
                 </button>
               ))}
