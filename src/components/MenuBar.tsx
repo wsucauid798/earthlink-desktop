@@ -84,6 +84,7 @@ import {
 } from "lucide-react";
 import type { ThemeMode } from "../hooks/useTheme";
 import { useConnectionStore } from "../store/connectionStore";
+import { useWorldStore } from "../store/worldStore";
 import { client } from "../api/client";
 import { useLogStore } from "../store/logStore";
 
@@ -380,6 +381,23 @@ export default function MenuBar({
     }
   };
 
+  const setSpeed = async (multiplier: number) => {
+    try {
+      await client.configureSimulation({ tick_interval_seconds: 1.0 / multiplier });
+      useWorldStore.getState().setSpeedMultiplier(multiplier);
+      // Scale agent movement transition to match tick interval
+      const transitionDuration = Math.max(0.05, 0.8 / multiplier);
+      document.documentElement.style.setProperty(
+        "--el-agent-transition-duration",
+        `${transitionDuration}s`
+      );
+      log().addConsole("success", `Speed set to ${multiplier}x`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log().addConsole("error", `Speed change failed: ${msg}`);
+    }
+  };
+
   const stub = () => {};
 
   const menus: MenuDef[] = [
@@ -408,6 +426,22 @@ export default function MenuBar({
     {
       label: "World",
       items: [
+        {
+          label: "Simulation",
+          icon: <SlidersHorizontal size={ICON_SIZE} />,
+          submenu: [
+            { label: "Start", icon: <Play size={ICON_SIZE} />, action: () => simControl("start"), disabled: !connected },
+            { label: "Pause", icon: <Pause size={ICON_SIZE} />, action: () => simControl("pause"), disabled: !connected },
+            { label: "Reset", icon: <RotateCcw size={ICON_SIZE} />, action: () => simControl("reset"), disabled: !connected },
+            { separator: true },
+            { label: "1x (Normal)", action: () => setSpeed(1), icon: <Gauge size={ICON_SIZE} />, disabled: !connected },
+            { label: "2x", action: () => setSpeed(2), icon: <Gauge size={ICON_SIZE} />, disabled: !connected },
+            { label: "5x", action: () => setSpeed(5), icon: <Gauge size={ICON_SIZE} />, disabled: !connected },
+            { label: "10x", action: () => setSpeed(10), icon: <Gauge size={ICON_SIZE} />, disabled: !connected },
+            { label: "20x", action: () => setSpeed(20), icon: <Gauge size={ICON_SIZE} />, disabled: !connected },
+          ],
+        },
+        { separator: true },
         {
           label: "Geography",
           icon: <MapPin size={ICON_SIZE} />,
@@ -589,16 +623,6 @@ export default function MenuBar({
           ],
         },
         { separator: true },
-        {
-          label: "Simulation Control",
-          icon: <SlidersHorizontal size={ICON_SIZE} />,
-          submenu: [
-            { label: "Start", icon: <Play size={ICON_SIZE} />, action: () => simControl("start"), disabled: !connected },
-            { label: "Pause", icon: <Pause size={ICON_SIZE} />, action: () => simControl("pause"), disabled: !connected },
-            { label: "Reset", icon: <RotateCcw size={ICON_SIZE} />, action: () => simControl("reset"), disabled: !connected },
-            { label: "Speed\u2026", icon: <Gauge size={ICON_SIZE} />, action: stub, disabled: !connected },
-          ],
-        },
         {
           label: "Force Refresh",
           icon: <RefreshCw size={ICON_SIZE} />,

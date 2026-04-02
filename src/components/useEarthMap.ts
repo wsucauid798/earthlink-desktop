@@ -96,6 +96,9 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         data: { type: "FeatureCollection", features: [] },
       });
 
+      // Insert location circles below the first symbol layer so map labels stay visible
+      const firstSymbolLayer = map.getStyle().layers.find((l: any) => l.type === "symbol");
+
       map.addLayer({
         id: "locations-circle",
         type: "circle",
@@ -104,9 +107,12 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
           "circle-radius": [
             "interpolate", ["linear"], ["zoom"],
             4, ["match", ["get", "type"],
-              "capital", 5, "city", 3.5, "town", 2, 1.5,
+              "capital", 4, "city", 2.5, "town", 1, 0.5,
             ],
-            10, ["match", ["get", "type"],
+            8, ["match", ["get", "type"],
+              "capital", 6, "city", 4, "town", 2.5, 1.5,
+            ],
+            12, ["match", ["get", "type"],
               "capital", 10, "city", 7, "town", 5, 3.5,
             ],
           ],
@@ -115,15 +121,21 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
             "capital", "#f59e0b", "city", "#3b82f6",
             "town", "#8b5cf6", "village", "#10b981", "#6b7280",
           ],
-          "circle-stroke-width": 1,
+          "circle-stroke-width": [
+            "interpolate", ["linear"], ["zoom"],
+            4, 0, 8, 0.5, 12, 1,
+          ],
           "circle-stroke-color": [
             "match", ["get", "type"],
             "capital", "#d97706", "city", "#2563eb",
             "town", "#7c3aed", "village", "#059669", "#4b5563",
           ],
-          "circle-opacity": 0.85,
+          "circle-opacity": [
+            "interpolate", ["linear"], ["zoom"],
+            4, 0.3, 7, 0.5, 10, 0.75, 12, 0.85,
+          ],
         },
-      });
+      }, firstSymbolLayer?.id);
 
       map.addLayer({
         id: "locations-label",
@@ -473,10 +485,12 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     );
 
     const agentFeatures: GeoJSON.Feature[] = [];
-    let missedCoords = 0;
     for (const agent of agents) {
-      const coord = locationLookup.get(agent.location_id);
-      if (!coord) { missedCoords++; continue; }
+      // Use agent's own coordinates (from server), fall back to locationLookup
+      const coord: [number, number] | undefined =
+        (agent.lat != null && agent.lng != null) ? [agent.lng, agent.lat] :
+        locationLookup.get(agent.location_id);
+      if (!coord) continue;
       agentFeatures.push({
         type: "Feature",
         geometry: { type: "Point", coordinates: coord },
@@ -491,11 +505,6 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
       });
     }
 
-    if (missedCoords > 0) {
-      console.warn(`[EarthMap] ${missedCoords}/${agents.length} agents have no coords in locationLookup`);
-    }
-    console.warn(`[EarthMap] Built ${agentFeatures.length} agent features for map`);
-
     lastAgentFeatures.current = agentFeatures;
 
     // Update GeoJSON source (for click/hover hit detection + labels)
@@ -508,7 +517,9 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     const currentIds = new Set<string>();
 
     for (const agent of agents) {
-      const coord = locationLookup.get(agent.location_id);
+      const coord: [number, number] | undefined =
+        (agent.lat != null && agent.lng != null) ? [agent.lng, agent.lat] :
+        locationLookup.get(agent.location_id);
       if (!coord) continue;
       currentIds.add(agent.id);
 
@@ -542,11 +553,8 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         marker = new maplibregl.Marker({ element: el, anchor: "center" })
           .setLngLat(coord as [number, number])
           .addTo(map);
-        agentMarkers.current.set(agent.id, marker);
 
-        console.warn(
-          `[EarthMap] Created marker for agent "${agent.name}" at [${coord}], dotSize=${ds}px`
-        );
+        agentMarkers.current.set(agent.id, marker);
       } else {
         // Update position
         marker.setLngLat(coord as [number, number]);
@@ -581,7 +589,9 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         duration: 1200,
       });
     } else if (selectedKind === "agent" && agentDetail) {
-      const coord = locationLookup.get(agentDetail.location_id);
+      const coord: [number, number] | undefined =
+        (agentDetail.lat != null && agentDetail.lng != null) ? [agentDetail.lng, agentDetail.lat] :
+        locationLookup.get(agentDetail.location_id);
       if (coord) {
         map.flyTo({
           center: coord as [number, number],

@@ -61,6 +61,10 @@ export interface WorldStoreState {
   dataFeedsUpdated: boolean;
   agentPhaseExceeded: boolean;
 
+  // Simulation speed
+  speedMultiplier: number;
+  setSpeedMultiplier: (speed: number) => void;
+
   // Setters
   setWorldState: (state: WorldState) => void;
   setAgents: (agents: AgentSummary[]) => void;
@@ -86,6 +90,8 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
   earthProxyResolves: 0,
   dataFeedsUpdated: false,
   agentPhaseExceeded: false,
+  speedMultiplier: 1,
+  setSpeedMultiplier: (speed) => set({ speedMultiplier: speed }),
 
   setWorldState: (state) =>
     set({

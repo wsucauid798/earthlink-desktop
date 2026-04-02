@@ -84,6 +84,7 @@ export default function Explorer() {
     agentCount,
     agentBackend,
     tickCount,
+    speedMultiplier,
     geographyStats,
   } = useWorldStore();
 
@@ -147,6 +148,7 @@ export default function Explorer() {
             <div className="px-3">
               <Row icon={<Activity size={11} />} label="Status" value={isRunning ? "Running" : "Stopped"} color={isRunning ? "var(--el-success)" : "var(--el-text-faint)"} />
               <Row icon={<Clock size={11} />} label="Tick" value={tickCount} />
+              <Row icon={<Activity size={11} />} label="Speed" value={`${speedMultiplier}x`} color={speedMultiplier > 1 ? "var(--el-accent)" : undefined} />
               {agentBackend && (
                 <Row icon={<Server size={11} />} label="Runtime" value={agentBackend} />
               )}

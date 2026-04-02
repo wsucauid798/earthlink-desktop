@@ -292,6 +292,11 @@ html, body, #root {
 
 /* --- MapLibre GL overrides --- */
 
+/* Smooth agent movement between ticks — duration scales with simulation speed */
+.maplibregl-marker:has(.el-agent-wrap) {
+  transition: transform var(--el-agent-transition-duration, 0.8s) ease-out;
+}
+
 .maplibregl-popup {
   z-index: 20 !important;
 }

@@ -210,6 +210,8 @@ export interface AgentSummary {
   name: string;
   location_id: number;
   location_name: string | null;
+  lat: number | null;
+  lng: number | null;
   last_action: string;
   energy: number;
   knowledge_score: number;
