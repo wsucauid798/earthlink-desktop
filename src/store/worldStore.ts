@@ -11,6 +11,7 @@
 
 import { create } from "zustand";
 import { normalizeAgentAction, withNormalizedAgentAction } from "../lib/agentAction";
+import { locationLookup, locationNameLookup } from "../components/mapShared";
 import type {
   AgentEvent,
   AgentSummary,
@@ -125,9 +126,14 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
     for (const ae of event.agent_events) {
       const idx = updatedAgents.findIndex((a) => a.id === ae.agent_id);
       if (idx !== -1) {
+        // Resolve coordinates from locationLookup so map markers move
+        const coord = locationLookup.get(ae.to_location_id);
         updatedAgents[idx] = {
           ...updatedAgents[idx],
           location_id: ae.to_location_id,
+          lat: coord ? coord[1] : null,
+          lng: coord ? coord[0] : null,
+          location_name: locationNameLookup.get(ae.to_location_id) ?? updatedAgents[idx].location_name,
           last_action: normalizeAgentAction(ae.action),
           energy: ae.energy,
           knowledge_score: ae.knowledge_score,

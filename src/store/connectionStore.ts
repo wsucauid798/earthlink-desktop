@@ -56,8 +56,47 @@ export interface ConnectionState {
 
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+import { invoke } from "@tauri-apps/api/core";
+
+const DEFAULT_SERVER_URL = "http://localhost:8000";
+
+/** Load server URL synchronously from localStorage (fast), then async from disk config. */
+function loadServerUrlSync(): string {
+  try {
+    return localStorage.getItem("earthlink_server_url") || DEFAULT_SERVER_URL;
+  } catch {
+    return DEFAULT_SERVER_URL;
+  }
+}
+
+/** Load config from ~/.earthlink/config.json and update the store + localStorage. */
+async function loadConfigFromDisk(): Promise<void> {
+  try {
+    const raw = await invoke<string>("load_config");
+    const config = JSON.parse(raw);
+    if (config.serverUrl) {
+      localStorage.setItem("earthlink_server_url", config.serverUrl);
+      useConnectionStore.setState({ serverUrl: config.serverUrl });
+    }
+  } catch { /* first run — no config yet */ }
+}
+
+/** Save server URL to both localStorage and ~/.earthlink/config.json. */
+async function saveServerUrl(url: string): Promise<void> {
+  try { localStorage.setItem("earthlink_server_url", url); } catch { /* ignore */ }
+  try {
+    const raw = await invoke<string>("load_config").catch(() => "{}");
+    const config = JSON.parse(raw);
+    config.serverUrl = url;
+    await invoke("save_config", { json: JSON.stringify(config, null, 2) });
+  } catch { /* ignore */ }
+}
+
+// Kick off async disk load on module init
+setTimeout(() => loadConfigFromDisk(), 0);
+
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
-  serverUrl: "http://localhost:8000",
+  serverUrl: loadServerUrlSync(),
   connected: false,
   wsStatus: "disconnected",
   serverVersion: null,
@@ -67,7 +106,10 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   retriesExhausted: false,
   retryCancelled: false,
 
-  setServerUrl: (url) => set({ serverUrl: url }),
+  setServerUrl: (url) => {
+    saveServerUrl(url);  // async — writes to localStorage + ~/.earthlink/config.json
+    set({ serverUrl: url });
+  },
 
   autoConnect: () => {
     // Start the auto-connect loop
