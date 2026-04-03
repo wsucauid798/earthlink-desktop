@@ -279,6 +279,9 @@ export interface AgentEvent {
   agent_id: string;
   from_location_id: number;
   to_location_id: number;
+  lat: number | null;
+  lng: number | null;
+  location_name: string | null;
   action: string;
   knowledge_score: number;
   reward: number;
