@@ -554,6 +554,14 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
           .setLngLat(coord as [number, number])
           .addTo(map);
 
+        // Smooth movement: apply transition to MapLibre's positioning wrapper
+        const wrapper = el.parentElement;
+        if (wrapper) {
+          const dur = getComputedStyle(document.documentElement)
+            .getPropertyValue("--el-agent-transition-duration").trim() || "0.8s";
+          wrapper.style.transition = `transform ${dur} ease-out`;
+        }
+
         agentMarkers.current.set(agent.id, marker);
       } else {
         // Update position

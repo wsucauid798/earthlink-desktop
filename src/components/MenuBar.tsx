@@ -391,6 +391,11 @@ export default function MenuBar({
         "--el-agent-transition-duration",
         `${transitionDuration}s`
       );
+      // Update existing marker wrappers
+      document.querySelectorAll<HTMLElement>(".el-agent-wrap").forEach((el) => {
+        const wrapper = el.parentElement;
+        if (wrapper) wrapper.style.transition = `transform ${transitionDuration}s ease-out`;
+      });
       log().addConsole("success", `Speed set to ${multiplier}x`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
