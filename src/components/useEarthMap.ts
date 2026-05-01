@@ -439,15 +439,37 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
 
     let cancelled = false;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    let inFlight: AbortController | null = null;
+    let requestSeq = 0;
 
-    const refetch = async (opts?: { bbox?: [number, number, number, number]; zoom?: number }) => {
-      // Cancel any in-flight refetch — only the latest viewport matters.
-      if (inFlight) inFlight.abort();
-      inFlight = new AbortController();
+    const refetch = async (opts?: {
+      bboxes?: [number, number, number, number][];
+      zoom?: number;
+    }) => {
+      const seq = ++requestSeq;
       try {
-        const geojson = await client.getLocationsGeoJSON(opts);
-        if (cancelled) return;
+        const bboxes = opts?.bboxes;
+        const responses = bboxes && bboxes.length > 0
+          ? await Promise.all(
+            bboxes.map((bbox) => client.getLocationsGeoJSON({ bbox, zoom: opts?.zoom })),
+          )
+          : [await client.getLocationsGeoJSON({ zoom: opts?.zoom })];
+
+        if (cancelled || seq !== requestSeq) return;
+
+        const byId = new Map<number, GeoJSON.Feature>();
+        for (const fc of responses) {
+          for (const feature of fc.features) {
+            const id = Number(feature.properties?.id);
+            if (!Number.isFinite(id)) continue;
+            byId.set(id, feature);
+          }
+        }
+
+        const geojson: GeoJSON.FeatureCollection = {
+          type: "FeatureCollection",
+          features: Array.from(byId.values()),
+        };
+
         buildLocationLookup(geojson);
         const src = map.getSource("locations") as maplibregl.GeoJSONSource | undefined;
         if (src) {
@@ -462,12 +484,15 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
           }
         }
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || seq !== requestSeq) return;
         const msg = err instanceof Error ? err.message : String(err);
         useLogStore.getState().addConsole("error", `Failed to load locations GeoJSON: ${msg}`);
-      } finally {
-        inFlight = null;
       }
+    };
+
+    const clampLat = (lat: number): number => Math.max(-85, Math.min(85, lat));
+    const normalizeLng = (lng: number): number => {
+      return ((lng + 180) % 360 + 360) % 360 - 180;
     };
 
     const refetchForViewport = () => {
@@ -475,8 +500,22 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
       const zoom = map.getZoom();
+
+      const south = clampLat(sw.lat);
+      const north = clampLat(ne.lat);
+      const west = normalizeLng(sw.lng);
+      const east = normalizeLng(ne.lng);
+
+      const bboxes: [number, number, number, number][] =
+        east < west
+          ? [
+            [west, south, 180, north],
+            [-180, south, east, north],
+          ]
+          : [[west, south, east, north]];
+
       refetch({
-        bbox: [sw.lng, sw.lat, ne.lng, ne.lat],
+        bboxes,
         zoom,
       });
     };
@@ -505,7 +544,6 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     return () => {
       cancelled = true;
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (inFlight) inFlight.abort();
       map.off("moveend", onMoveEnd);
     };
   }, [connected]);
