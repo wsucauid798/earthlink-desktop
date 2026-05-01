@@ -79,8 +79,15 @@ export class EarthLinkClient {
     return this.get(`/api/locations${q ? `?${q}` : ""}`);
   }
 
-  getLocationsGeoJSON(): Promise<GeoJSON.FeatureCollection> {
-    return this.get("/api/locations/geojson");
+  getLocationsGeoJSON(opts?: {
+    bbox?: [number, number, number, number]; // [west, south, east, north]
+    zoom?: number;
+  }): Promise<GeoJSON.FeatureCollection> {
+    const qs = new URLSearchParams();
+    if (opts?.bbox) qs.set("bbox", opts.bbox.join(","));
+    if (opts?.zoom != null) qs.set("zoom", String(opts.zoom));
+    const q = qs.toString();
+    return this.get(`/api/locations/geojson${q ? `?${q}` : ""}`);
   }
 
   getLocation(id: number): Promise<Location> {

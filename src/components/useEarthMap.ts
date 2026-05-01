@@ -425,50 +425,89 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Load locations GeoJSON when connected ---
+  // --- Load locations GeoJSON: initial overview + viewport-aware refetches ---
+  //
+  // Initial: no params -> server returns the global overview tier (capital + city).
+  // Subsequent: on `moveend` (debounced) -> refetch with current bbox + zoom so
+  // the server returns only locations inside the viewport at appropriate density.
+  // This replaces the previous one-shot load that returned everything matching
+  // a brittle population filter.
   useEffect(() => {
-    if (!connected || locationsLoaded.current) return;
+    if (!connected) return;
     const map = mapRef.current;
     if (!map) return;
 
-    const load = async () => {
+    let cancelled = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight: AbortController | null = null;
+
+    const refetch = async (opts?: { bbox?: [number, number, number, number]; zoom?: number }) => {
+      // Cancel any in-flight refetch — only the latest viewport matters.
+      if (inFlight) inFlight.abort();
+      inFlight = new AbortController();
       try {
-        const geojson = await client.getLocationsGeoJSON();
+        const geojson = await client.getLocationsGeoJSON(opts);
+        if (cancelled) return;
         buildLocationLookup(geojson);
         const src = map.getSource("locations") as maplibregl.GeoJSONSource | undefined;
         if (src) {
           src.setData(geojson);
-          locationsLoaded.current = true;
           setLocationsFeatureCount(geojson.features.length);
-
-          // Fit map to the loaded data
-          if (geojson.features.length > 0) {
-            const bounds = new maplibregl.LngLatBounds();
-            for (const feat of geojson.features) {
-              if (feat.geometry.type === "Point") {
-                const [lng, lat] = (feat.geometry as GeoJSON.Point).coordinates;
-                bounds.extend([lng, lat]);
-              }
-            }
-            map.fitBounds(bounds, { padding: 40, duration: 1200 });
+          if (!locationsLoaded.current) {
+            locationsLoaded.current = true;
+            useLogStore.getState().addConsole(
+              "success",
+              `${geojson.features.length.toLocaleString()} locations rendered on ${options.logLabel ?? "map"}`,
+            );
           }
-
-          useLogStore.getState().addConsole(
-            "success",
-            `${geojson.features.length.toLocaleString()} locations rendered on ${options.logLabel ?? "map"}`,
-          );
         }
       } catch (err) {
+        if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
         useLogStore.getState().addConsole("error", `Failed to load locations GeoJSON: ${msg}`);
+      } finally {
+        inFlight = null;
       }
     };
 
+    const refetchForViewport = () => {
+      const bounds = map.getBounds();
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      const zoom = map.getZoom();
+      refetch({
+        bbox: [sw.lng, sw.lat, ne.lng, ne.lat],
+        zoom,
+      });
+    };
+
+    const onMoveEnd = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(refetchForViewport, 300);
+    };
+
+    const initialLoad = () => {
+      // Overview tier first (no params -> capital + city worldwide), then
+      // immediately refetch for the current viewport so users see denser
+      // detail wherever the map is currently centred.
+      refetch().then(() => {
+        if (!cancelled) refetchForViewport();
+      });
+      map.on("moveend", onMoveEnd);
+    };
+
     if (map.isStyleLoaded()) {
-      load();
+      initialLoad();
     } else {
-      map.on("load", load);
+      map.on("load", initialLoad);
     }
+
+    return () => {
+      cancelled = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (inFlight) inFlight.abort();
+      map.off("moveend", onMoveEnd);
+    };
   }, [connected]);
 
   // --- Update agent positions from VW state ---
