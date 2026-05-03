@@ -494,6 +494,19 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     const normalizeLng = (lng: number): number => {
       return ((lng + 180) % 360 + 360) % 360 - 180;
     };
+    const expandBbox = (bbox: [number, number, number, number]): [number, number, number, number] => {
+      const [west, south, east, north] = bbox;
+      const width = Math.max(0, east - west);
+      const height = Math.max(0, north - south);
+      const lngPad = Math.min(15, Math.max(0.5, width * 0.1));
+      const latPad = Math.min(8, Math.max(0.5, height * 0.1));
+      return [
+        Math.max(-180, west - lngPad),
+        clampLat(south - latPad),
+        Math.min(180, east + lngPad),
+        clampLat(north + latPad),
+      ];
+    };
 
     const refetchForViewport = () => {
       const bounds = map.getBounds();
@@ -506,13 +519,14 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
       const west = normalizeLng(sw.lng);
       const east = normalizeLng(ne.lng);
 
-      const bboxes: [number, number, number, number][] =
+      const rawBboxes: [number, number, number, number][] =
         east < west
           ? [
             [west, south, 180, north],
             [-180, south, east, north],
           ]
           : [[west, south, east, north]];
+      const bboxes = rawBboxes.map(expandBbox);
 
       refetch({
         bboxes,

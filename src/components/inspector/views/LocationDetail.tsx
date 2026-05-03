@@ -75,8 +75,8 @@ export default function LocationDetail({
         {loc.terrain && <Prop label="Terrain" value={loc.terrain} />}
         {loc.admin_level_4 && <Prop label="District" value={loc.admin_level_4} />}
         {loc.admin_level_3 && <Prop label="Region" value={loc.admin_level_3} />}
-        {loc.admin_level_2 && <Prop label="Country" value={loc.admin_level_2} />}
-        {loc.admin_level_1 && loc.admin_level_1 !== loc.admin_level_2 && <Prop label="Sovereign" value={loc.admin_level_1} />}
+        {loc.admin_level_2 && <Prop label="State / Province" value={loc.admin_level_2} />}
+        {loc.admin_level_1 && <Prop label="Country" value={loc.admin_level_1} />}
         {nearby.length > 0 && <Prop icon={<Link size={11} />} label="Connections" value={String(nearby.length)} />}
       </CardSection>
 

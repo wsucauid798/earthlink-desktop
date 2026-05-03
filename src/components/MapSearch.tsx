@@ -251,7 +251,10 @@ export default function MapSearch() {
                       {loc.name}
                     </div>
                     <div className="text-[9px]" style={{ color: "var(--el-text-faint)" }}>
-                      {loc.admin_level_2 ?? ""}{loc.population ? ` \u00b7 ${formatPop(loc.population)} pop.` : ""}
+                      {loc.admin_level_2 && loc.admin_level_1 && loc.admin_level_2 !== loc.admin_level_1
+                        ? `${loc.admin_level_2}, ${loc.admin_level_1}`
+                        : (loc.admin_level_1 ?? loc.admin_level_2 ?? "")}
+                      {loc.population ? ` \u00b7 ${formatPop(loc.population)} pop.` : ""}
                     </div>
                   </div>
                   <span className={typeBadgeClass(loc.type)}>{loc.type}</span>
