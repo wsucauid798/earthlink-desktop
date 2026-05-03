@@ -187,14 +187,14 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       log.addConsole("warning", `Could not fetch agents: ${msg}`);
     }
 
-    // 4. Open WebSocket for tick streaming
+    // 4. Open stream transport for tick streaming (WT preferred, WS fallback)
     worldWs.on({
       onStatusChange: (status) => {
         set({ wsStatus: status });
         if (status === "connected") {
-          log.addConsole("success", "WebSocket stream connected");
+          log.addConsole("success", "World stream connected");
         } else if (status === "reconnecting") {
-          log.addConsole("warning", "WebSocket reconnecting...");
+          log.addConsole("warning", "World stream reconnecting...");
         }
       },
       onTick: (event: TickEvent) => {
@@ -220,7 +220,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         );
       },
       onError: (msg) => {
-        log.addConsole("error", `WebSocket: ${msg}`);
+        log.addConsole("warning", `Stream transport: ${msg}`);
       },
     });
 
