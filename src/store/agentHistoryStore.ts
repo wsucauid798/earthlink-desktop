@@ -37,7 +37,9 @@ interface AgentHistoryStoreState {
   maxSnapshots: number;
 
   /** Record a tick's agent events into history */
-  recordTick: (tick: number, time: WorldTime, events: AgentEvent[], energyMap?: Record<string, number>) => void;
+  recordTick: (tick: number, time: WorldTime, events: AgentEvent[], trackedAgentIds?: string[]) => void;
+  /** Set which agents should be tracked for history (selection + open tabs). */
+  setTrackedAgents: (agentIds: string[]) => void;
   /** Clear all history (e.g. on world reset) */
   clearAll: () => void;
   /** Clear one agent's history */
@@ -46,17 +48,37 @@ interface AgentHistoryStoreState {
   getAgentHistory: (agentId: string) => AgentHistory | undefined;
 }
 
-const DEFAULT_MAX_SNAPSHOTS = 1000;
+const DEFAULT_MAX_SNAPSHOTS = 400;
+const MAX_TRACKED_AGENTS = 32;
 
 export const useAgentHistoryStore = create<AgentHistoryStoreState>((set, get) => ({
   histories: {},
   maxSnapshots: DEFAULT_MAX_SNAPSHOTS,
+  setTrackedAgents: (agentIds) => {
+    const unique = Array.from(new Set(agentIds.filter(Boolean))).slice(0, MAX_TRACKED_AGENTS);
+    const tracked = new Set(unique);
+    const { histories } = get();
+    const pruned: Record<string, AgentHistory> = {};
+    for (const id of Object.keys(histories)) {
+      if (tracked.has(id)) pruned[id] = histories[id];
+    }
+    set({ histories: pruned });
+  },
 
-  recordTick: (tick, time, events, energyMap) => {
+  recordTick: (tick, time, events, trackedAgentIds) => {
+    if (events.length === 0) return;
+    const trackedSet = trackedAgentIds && trackedAgentIds.length > 0
+      ? new Set(trackedAgentIds)
+      : null;
+    if (trackedSet && trackedSet.size === 0) return;
+
     const { histories, maxSnapshots } = get();
-    const updated = { ...histories };
+    const updated = trackedSet ? Object.fromEntries(
+      Object.entries(histories).filter(([agentId]) => trackedSet.has(agentId)),
+    ) : { ...histories };
 
     for (const e of events) {
+      if (trackedSet && !trackedSet.has(e.agent_id)) continue;
       const snapshot: AgentSnapshot = {
         tick,
         timestamp: time.current_time,
@@ -66,7 +88,7 @@ export const useAgentHistoryStore = create<AgentHistoryStoreState>((set, get) =>
         knowledgeScore: e.knowledge_score,
         reward: e.reward,
         qValue: e.q_value,
-        energy: energyMap?.[e.agent_id],
+        energy: e.energy,
         goal: e.goal,
       };
 

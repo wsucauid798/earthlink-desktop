@@ -12,6 +12,7 @@ import { useWorldStore } from "./worldStore";
 import { useLogStore } from "./logStore";
 import { useAgentHistoryStore } from "./agentHistoryStore";
 import { useSelectionStore } from "./selectionStore";
+import { useViewportStore } from "./viewportStore";
 import type { TickEvent } from "../api/types";
 
 const RETRY_DELAYS = [2_000, 4_000, 8_000, 15_000, 30_000]; // escalating backoff
@@ -203,13 +204,19 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         // Live refresh: re-fetch stale data for selected location
         useSelectionStore.getState().handleTick(event);
 
-        // Record into history store for Analytics/Decisions/Traces
-        const energyMap: Record<string, number> = {};
-        for (const a of useWorldStore.getState().agents) {
-          energyMap[a.id] = a.energy;
+        // Record history only for relevant agents (selected + open agent tabs).
+        const tracked = new Set<string>();
+        const selection = useSelectionStore.getState();
+        if (selection.kind === "agent" && selection.id) {
+          tracked.add(String(selection.id));
         }
+        for (const tab of useViewportStore.getState().tabs) {
+          if (tab.agentId) tracked.add(tab.agentId);
+        }
+        const trackedIds = Array.from(tracked);
+        useAgentHistoryStore.getState().setTrackedAgents(trackedIds);
         useAgentHistoryStore.getState().recordTick(
-          event.tick, event.time, event.agent_events, energyMap,
+          event.tick, event.time, event.agent_events, trackedIds,
         );
       },
       onError: (msg) => {

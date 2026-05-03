@@ -568,13 +568,6 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     if (!map || !agentSourceReady.current) return;
     if (agents.length === 0 && locationsFeatureCount === 0) return;
 
-    // --- DEBUG: log agent data flow ---
-    console.warn(
-      `[EarthMap] Agent update: ${agents.length} agents in store, ` +
-      `locationLookup size: ${locationLookup.size}, ` +
-      `agentSourceReady: ${agentSourceReady.current}`
-    );
-
     const agentFeatures: GeoJSON.Feature[] = [];
     for (const agent of agents) {
       // Use agent's own coordinates (from server), fall back to locationLookup
@@ -667,8 +660,6 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
         agentMarkers.current.delete(id);
       }
     }
-
-    console.warn(`[EarthMap] Active agent markers: ${agentMarkers.current.size}`);
   }, [agents, locationsFeatureCount]);
 
   // --- Fly to selected entity ---
