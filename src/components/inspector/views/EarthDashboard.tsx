@@ -6,16 +6,19 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { Compass, Orbit, Sun, Activity } from "lucide-react";
+import { Compass, Orbit, Sun, Activity, Moon, Zap, Wind, Magnet, Globe } from "lucide-react";
 import { useConnectionStore } from "../../../store/connectionStore";
 import { client } from "../../../api/client";
-import type { EarthRotation, OrbitalData } from "../../../api/types";
+import type { EarthRotation, OrbitalData, SolarActivity } from "../../../api/types";
 import { CardSection } from "../CardSection";
 import AnimNum from "../AnimNum";
 import SubSolarMap from "../viz/SubSolarMap";
 import OrbitalDiagram from "../viz/OrbitalDiagram";
 import DeclinationTrack from "../viz/DeclinationTrack";
+import MoonDisc from "../viz/MoonDisc";
 import RealtimeChart from "../charts/RealtimeChart";
+import SparklineChart from "../charts/SparklineChart";
+import ArcGauge from "../gauges/ArcGauge";
 
 const MAX_HIST = 120;
 
@@ -28,12 +31,15 @@ export default function EarthDashboard() {
   const connected = useConnectionStore((s) => s.connected);
   const [rotation, setRotation] = useState<EarthRotation | null>(null);
   const [orbital, setOrbital] = useState<OrbitalData | null>(null);
+  const [solar, setSolar] = useState<SolarActivity | null>(null);
 
   // Session-history ring buffers for trend charts
   const [gmstHist, setGmstHist] = useState<number[]>([]);
   const [declinHist, setDeclinHist] = useState<number[]>([]);
   const [distHist, setDistHist] = useState<number[]>([]);
   const [speedHist, setSpeedHist] = useState<number[]>([]);
+  const [kpHist, setKpHist] = useState<number[]>([]);
+  const [windHist, setWindHist] = useState<number[]>([]);
 
   // Track cumulative GMST to unwrap across the 0/360 boundary
   const prevGmst = useRef<number | null>(null);
@@ -77,15 +83,31 @@ export default function EarthDashboard() {
       }
     };
 
+    // Slow domain — space weather refreshes every ~5 min upstream.
+    const loadSolar = async () => {
+      try {
+        const next = await client.getSolarActivity();
+        if (cancelled || !next) return;
+        setSolar(next);
+        if (next.kp_index != null) setKpHist(prev => push(prev, next.kp_index as number));
+        if (next.solar_wind_speed_kms != null) setWindHist(prev => push(prev, next.solar_wind_speed_kms as number));
+      } catch { /* ignore */ }
+    };
+
     void load();
+    void loadSolar();
 
     const intervalId = window.setInterval(() => {
       void load();
     }, 1000);
+    const solarIntervalId = window.setInterval(() => {
+      void loadSolar();
+    }, 300_000);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      window.clearInterval(solarIntervalId);
     };
   }, [connected]);
 
@@ -140,9 +162,9 @@ export default function EarthDashboard() {
                 style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
               <div>Speed <AnimNum value={orbital.orbital_speed_kms} decimals={2} suffix=" km/s"
                 style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
-              <div>Position <AnimNum value={orbital.orbital_position_deg} decimals={0} suffix="°"
+              <div>Position <AnimNum value={orbital.orbital_position_deg} decimals={2} suffix="°"
                 style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
-              <div>Axial Tilt <AnimNum value={orbital.axial_tilt_deg} decimals={2} suffix="°"
+              <div>Axial Tilt <AnimNum value={orbital.axial_tilt_deg} decimals={4} suffix="°"
                 style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
               <div>Eccentricity <AnimNum value={orbital.eccentricity} decimals={4}
                 style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
@@ -189,6 +211,121 @@ export default function EarthDashboard() {
           </div>
         </CardSection>
       )}
+
+      {/* Lunar — global instantaneous moon state from /api/rotation */}
+      {rotation && rotation.moon_phase_name && (
+        <CardSection title="Lunar" icon={<Moon size={10} />}>
+          <div className="flex items-center gap-3">
+            <MoonDisc illuminationPct={rotation.moon_illumination_pct ?? 0} />
+            <div className="flex-1 text-[10px] space-y-1.5" style={{ color: "var(--el-text-muted)" }}>
+              <div>Phase <b style={{ color: "var(--el-text)" }}>{rotation.moon_phase_name}</b></div>
+              {rotation.moon_illumination_pct != null && (
+                <div>Illumination <AnimNum value={rotation.moon_illumination_pct} decimals={1} suffix="%"
+                  style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+              )}
+              {rotation.moon_age_days != null && (
+                <div>Age <AnimNum value={rotation.moon_age_days} decimals={2} suffix=" days"
+                  style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+              )}
+            </div>
+          </div>
+        </CardSection>
+      )}
+
+      {/* Space Weather — live NOAA/SWPC global readings */}
+      {solar && (
+        <CardSection title="Space Weather" icon={<Zap size={10} />}>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+            {solar.kp_index != null && (
+              <div>Kp <AnimNum value={solar.kp_index} decimals={2}
+                style={{ color: "var(--el-text)", fontWeight: 600 }} />{solar.kp_category && (
+                  <span className="ml-1 opacity-70">· {solar.kp_category}</span>
+                )}</div>
+            )}
+            {solar.xray_class && (
+              <div>X-ray <b style={{ color: "var(--el-text)" }}>{solar.xray_class}</b></div>
+            )}
+            {solar.solar_wind_speed_kms != null && (
+              <div>Wind <AnimNum value={solar.solar_wind_speed_kms} decimals={0} suffix=" km/s"
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            )}
+            {solar.solar_wind_density != null && (
+              <div>Density <AnimNum value={solar.solar_wind_density} decimals={2} suffix=" p/cm³"
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            )}
+            {solar.bt_nt != null && (
+              <div>IMF Bt <AnimNum value={solar.bt_nt} decimals={2} suffix=" nT"
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            )}
+            {solar.bz_gsm_nt != null && (
+              <div>IMF Bz <AnimNum value={solar.bz_gsm_nt} decimals={2} suffix=" nT"
+                style={{ color: "var(--el-text)", fontWeight: 600 }} /></div>
+            )}
+          </div>
+          {(kpHist.length >= 2 || windHist.length >= 2) && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {kpHist.length >= 2 && (
+                <SparklineChart data={kpHist} color="var(--el-warning)" height={28} />
+              )}
+              {windHist.length >= 2 && (
+                <SparklineChart data={windHist} color="var(--el-info)" height={28} />
+              )}
+            </div>
+          )}
+        </CardSection>
+      )}
+
+      {/* Atmosphere — global mean composition (constants) + live equatorial pressure (~constant) */}
+      <CardSection title="Atmosphere" icon={<Wind size={10} />}>
+        <div className="space-y-1.5 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+          <div className="flex items-center justify-between">
+            <span>N₂ <b style={{ color: "var(--el-text)" }}>78.09%</b></span>
+            <span>O₂ <b style={{ color: "var(--el-text)" }}>20.95%</b></span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span>Ar <b style={{ color: "var(--el-text)" }}>0.93%</b></span>
+            <span>CO₂ <b style={{ color: "var(--el-text)" }}>425 ppm</b></span>
+          </div>
+          <div>Sea-level Pressure <b style={{ color: "var(--el-text)" }}>1013.25 hPa</b></div>
+        </div>
+      </CardSection>
+
+      {/* Geophysics — global equatorial reference values */}
+      <CardSection title="Geophysics" icon={<Magnet size={10} />}>
+        <div className="flex items-center justify-around py-1">
+          <svg width={70} height={50} viewBox="0 0 70 50">
+            <ArcGauge cx={35} cy={42} r={26} value={9.81} max={10} color="var(--el-info)" label="Gravity" unit="m/s²" />
+          </svg>
+          <svg width={70} height={50} viewBox="0 0 70 50">
+            <ArcGauge cx={35} cy={42} r={26} value={47.9} max={70} color="var(--el-accent)" label="Mag Field" unit="µT" />
+          </svg>
+          <svg width={70} height={50} viewBox="0 0 70 50">
+            <ArcGauge cx={35} cy={42} r={26} value={1674} max={2000} color="var(--el-success)" label="Rotation" unit="km/h" />
+          </svg>
+        </div>
+      </CardSection>
+
+      {/* Planet — Earth constants */}
+      <CardSection title="Planet" icon={<Globe size={10} />}>
+        <div className="space-y-2 text-[10px]" style={{ color: "var(--el-text-muted)" }}>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Land <b style={{ color: "var(--el-text)" }}>29.2%</b></span>
+              <span>Water <b style={{ color: "var(--el-text)" }}>70.8%</b></span>
+            </div>
+            <div className="h-1.5 rounded overflow-hidden flex" style={{ background: "var(--el-border-subtle)" }}>
+              <div style={{ width: "29.2%", background: "var(--el-warning)" }} />
+              <div style={{ width: "70.8%", background: "var(--el-info)" }} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div>Radius <b style={{ color: "var(--el-text)" }}>6,371 km</b></div>
+            <div>Age <b style={{ color: "var(--el-text)" }}>4.54 Gyr</b></div>
+            <div>Surface <b style={{ color: "var(--el-text)" }}>510.1M km²</b></div>
+            <div>Moons <b style={{ color: "var(--el-text)" }}>1</b></div>
+          </div>
+        </div>
+      </CardSection>
 
       {/* Live session activity feed */}
       {(gmstHist.length > 0 || distHist.length > 0) && (
