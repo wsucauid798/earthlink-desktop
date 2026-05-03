@@ -61,6 +61,11 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
   const agentSourceReady = useRef(false);
   const lastAgentFeatures = useRef<GeoJSON.Feature[]>([]);
   const agentMarkers = useRef<Map<string, maplibregl.Marker>>(new Map());
+  // Per-agent: timestamp of last position update + last coordinate.
+  // Used to size the CSS transition so each motion spans the actual
+  // wall-time gap until the next update — agents glide continuously
+  // instead of snap-then-wait.
+  const agentLastUpdate = useRef<Map<string, { ts: number; lng: number; lat: number }>>(new Map());
   const [locationsFeatureCount, setLocationsFeatureCount] = useState(0);
 
   const connected = useConnectionStore((s) => s.connected);
@@ -638,18 +643,26 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
           .setLngLat(coord as [number, number])
           .addTo(map);
 
-        // Smooth movement: apply transition to MapLibre's positioning wrapper
-        const wrapper = el.parentElement;
-        if (wrapper) {
-          const dur = getComputedStyle(document.documentElement)
-            .getPropertyValue("--el-agent-transition-duration").trim() || "0.8s";
-          wrapper.style.transition = `transform ${dur} ease-out`;
-        }
-
         agentMarkers.current.set(agent.id, marker);
+        agentLastUpdate.current.set(agent.id, { ts: performance.now(), lng: coord[0], lat: coord[1] });
       } else {
-        // Update position
-        marker.setLngLat(coord as [number, number]);
+        // Only re-tween if the position actually changed.
+        const last = agentLastUpdate.current.get(agent.id);
+        if (!last || last.lng !== coord[0] || last.lat !== coord[1]) {
+          const now = performance.now();
+          // Size the transition to match the wall-clock gap since the
+          // previous update. Agents glide continuously rather than
+          // snapping in 0.8s and then sitting idle until the next tick.
+          // Clamp to keep visuals responsive for very fast or very slow
+          // tick cadences.
+          const gapMs = last ? Math.max(200, Math.min(8000, now - last.ts)) : 800;
+          const wrapper = (marker.getElement().parentElement) as HTMLElement | null;
+          if (wrapper) {
+            wrapper.style.transition = `transform ${gapMs}ms linear`;
+          }
+          marker.setLngLat(coord as [number, number]);
+          agentLastUpdate.current.set(agent.id, { ts: now, lng: coord[0], lat: coord[1] });
+        }
       }
     }
 
@@ -658,6 +671,7 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
       if (!currentIds.has(id)) {
         marker.remove();
         agentMarkers.current.delete(id);
+        agentLastUpdate.current.delete(id);
       }
     }
   }, [agents, locationsFeatureCount]);
