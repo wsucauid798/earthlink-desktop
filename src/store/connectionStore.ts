@@ -187,7 +187,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       log.addConsole("warning", `Could not fetch agents: ${msg}`);
     }
 
-    // 4. Open stream transport for tick streaming (WT preferred, WS fallback)
+    // 4. Open stream transport for tick streaming (WT/QUIC only)
     worldWs.on({
       onStatusChange: (status) => {
         set({ wsStatus: status });

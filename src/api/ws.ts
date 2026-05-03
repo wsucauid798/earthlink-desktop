@@ -1,17 +1,14 @@
 /**
- * Stream transport manager for world tick events.
+ * WebTransport (QUIC) manager for world tick events.
  *
- * Starts the QUIC/WebTransport migration while preserving compatibility:
- * - Preferred transport can be set via localStorage/env
- * - Automatic fallback to WebSocket when WT is unavailable
- * - Existing callback/status contract preserved for store compatibility
+ * This client is intentionally WT-only:
+ * - No WebSocket fallback path
+ * - Explicit failure if WebTransport is unavailable
  */
 
 import type { TickEvent } from "./types";
 
 export type WsStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
-export type StreamTransportKind = "websocket" | "webtransport";
-
 export interface WsCallbacks {
   onTick?: (event: TickEvent) => void;
   onStatusChange?: (status: WsStatus) => void;
@@ -29,116 +26,10 @@ interface WorldStreamClient {
 const MIN_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 
-function deriveWsBase(serverUrl: string): string {
-  return serverUrl
-    .replace(/^http:/, "ws:")
-    .replace(/^https:/, "wss:")
-    .replace(/\/$/, "");
-}
-
 function deriveWtBase(serverUrl: string): string {
   return serverUrl
     .replace(/^http:/, "https:")
     .replace(/\/$/, "");
-}
-
-function preferredTransport(): StreamTransportKind {
-  const fromStorage = typeof localStorage !== "undefined"
-    ? localStorage.getItem("earthlink_stream_transport")
-    : null;
-  const fromEnv = (import.meta.env.VITE_STREAM_TRANSPORT as string | undefined)?.toLowerCase();
-  const raw = (fromStorage ?? fromEnv ?? "webtransport").toLowerCase();
-  return raw === "websocket" ? "websocket" : "webtransport";
-}
-
-class WorldWebSocket implements WorldStreamClient {
-  private ws: WebSocket | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectDelay = MIN_RECONNECT_MS;
-  private intentionalClose = false;
-  private _status: WsStatus = "disconnected";
-  private callbacks: WsCallbacks = {};
-
-  get status(): WsStatus {
-    return this._status;
-  }
-
-  on(callbacks: WsCallbacks): void {
-    this.callbacks = { ...this.callbacks, ...callbacks };
-  }
-
-  connect(serverUrl: string): void {
-    this.intentionalClose = false;
-    this.clearReconnectTimer();
-
-    this.setStatus("connecting");
-
-    try {
-      this.ws = new WebSocket(`${deriveWsBase(serverUrl)}/ws/world`);
-    } catch {
-      this.setStatus("disconnected");
-      this.callbacks.onError?.("Failed to create WebSocket");
-      return;
-    }
-
-    this.ws.onopen = () => {
-      this.reconnectDelay = MIN_RECONNECT_MS;
-      this.setStatus("connected");
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        this.callbacks.onRawMessage?.(event.data);
-        const data = JSON.parse(event.data) as TickEvent;
-        this.callbacks.onTick?.(data);
-      } catch {
-        // Ignore malformed messages
-      }
-    };
-
-    this.ws.onerror = () => {
-      this.callbacks.onError?.("WebSocket error");
-    };
-
-    this.ws.onclose = () => {
-      this.ws = null;
-      if (!this.intentionalClose) {
-        this.setStatus("reconnecting");
-        this.scheduleReconnect(serverUrl);
-      } else {
-        this.setStatus("disconnected");
-      }
-    };
-  }
-
-  disconnect(): void {
-    this.intentionalClose = true;
-    this.clearReconnectTimer();
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.setStatus("disconnected");
-  }
-
-  private setStatus(status: WsStatus): void {
-    this._status = status;
-    this.callbacks.onStatusChange?.(status);
-  }
-
-  private scheduleReconnect(serverUrl: string): void {
-    this.reconnectTimer = setTimeout(() => {
-      this.connect(serverUrl);
-    }, this.reconnectDelay);
-    this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_MS);
-  }
-
-  private clearReconnectTimer(): void {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-  }
 }
 
 class WorldWebTransport implements WorldStreamClient {
@@ -179,7 +70,7 @@ class WorldWebTransport implements WorldStreamClient {
   private async connectAsync(serverUrl: string): Promise<void> {
     const WT = (globalThis as any).WebTransport;
     if (typeof WT !== "function") {
-      this.callbacks.onError?.("WebTransport not supported by this runtime");
+      this.callbacks.onError?.("WebTransport is required but unavailable in this runtime");
       this.setStatus("disconnected");
       return;
     }
@@ -255,65 +146,5 @@ class WorldWebTransport implements WorldStreamClient {
   }
 }
 
-class WorldStreamManager implements WorldStreamClient {
-  private callbacks: WsCallbacks = {};
-  private current: WorldStreamClient | null = null;
-  private _status: WsStatus = "disconnected";
-
-  get status(): WsStatus {
-    return this._status;
-  }
-
-  on(callbacks: WsCallbacks): void {
-    this.callbacks = { ...this.callbacks, ...callbacks };
-    if (this.current) this.current.on(this.callbacks);
-  }
-
-  connect(serverUrl: string): void {
-    const preferred = preferredTransport();
-    this.disconnect();
-
-    if (preferred === "webtransport") {
-      if (WorldWebTransport.supported()) {
-        this.callbacks.onError?.("Using WebTransport (QUIC) for world stream");
-        this.current = this.createClient("webtransport");
-        this.current.connect(serverUrl);
-        return;
-      }
-      this.callbacks.onError?.("WebTransport unavailable; falling back to WebSocket");
-    }
-
-    this.current = this.createClient("websocket");
-    this.current.connect(serverUrl);
-  }
-
-  disconnect(): void {
-    this.current?.disconnect();
-    this.current = null;
-    this.setStatus("disconnected");
-  }
-
-  private createClient(kind: StreamTransportKind): WorldStreamClient {
-    const client = kind === "webtransport"
-      ? new WorldWebTransport()
-      : new WorldWebSocket();
-    client.on({
-      ...this.callbacks,
-      onStatusChange: (status) => {
-        this.setStatus(status);
-        this.callbacks.onStatusChange?.(status);
-      },
-      onError: (err) => this.callbacks.onError?.(err),
-      onRawMessage: (raw) => this.callbacks.onRawMessage?.(raw),
-      onTick: (tick) => this.callbacks.onTick?.(tick),
-    });
-    return client;
-  }
-
-  private setStatus(status: WsStatus): void {
-    this._status = status;
-  }
-}
-
-/** Singleton stream manager (WT preferred, WS fallback). */
-export const worldWs = new WorldStreamManager();
+/** Singleton stream transport (WT-only). */
+export const worldWs = new WorldWebTransport();
