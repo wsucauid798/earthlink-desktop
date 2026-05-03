@@ -19,22 +19,32 @@ export interface WsCallbacks {
 interface WorldStreamClient {
   readonly status: WsStatus;
   on(callbacks: WsCallbacks): void;
-  connect(serverUrl: string): void;
+  connect(serverUrl: string, opts?: { wtUrl?: string | null; wtPath?: string | null }): void;
   disconnect(): void;
 }
 
 const MIN_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 30_000;
 
-function deriveWtBase(serverUrl: string): string {
-  return serverUrl
-    .replace(/^http:/, "https:")
-    .replace(/\/$/, "");
+function deriveWtUrl(
+  serverUrl: string,
+  wtUrl?: string | null,
+  wtPath?: string | null,
+): string {
+  if (wtUrl && wtUrl.trim().length > 0) {
+    return wtUrl.trim();
+  }
+
+  const base = serverUrl.replace(/^http:/, "https:").replace(/\/$/, "");
+  const path = (wtPath && wtPath.trim().length > 0 ? wtPath : "/wt/world").trim();
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 class WorldWebTransport implements WorldStreamClient {
   private transport: any = null;
-  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private datagramReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private incomingStreamReader: ReadableStreamDefaultReader<ReadableStream<Uint8Array>> | null = null;
+  private activeStreamReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>();
   private _status: WsStatus = "disconnected";
   private callbacks: WsCallbacks = {};
   private intentionalClose = false;
@@ -53,11 +63,11 @@ class WorldWebTransport implements WorldStreamClient {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
-  connect(serverUrl: string): void {
+  connect(serverUrl: string, opts?: { wtUrl?: string | null; wtPath?: string | null }): void {
     this.intentionalClose = false;
     this.clearReconnectTimer();
     this.setStatus("connecting");
-    void this.connectAsync(serverUrl);
+    void this.connectAsync(serverUrl, opts);
   }
 
   disconnect(): void {
@@ -67,7 +77,10 @@ class WorldWebTransport implements WorldStreamClient {
     this.setStatus("disconnected");
   }
 
-  private async connectAsync(serverUrl: string): Promise<void> {
+  private async connectAsync(
+    serverUrl: string,
+    opts?: { wtUrl?: string | null; wtPath?: string | null },
+  ): Promise<void> {
     const WT = (globalThis as any).WebTransport;
     if (typeof WT !== "function") {
       this.callbacks.onError?.("WebTransport is required but unavailable in this runtime");
@@ -76,11 +89,13 @@ class WorldWebTransport implements WorldStreamClient {
     }
 
     try {
-      this.transport = new WT(`${deriveWtBase(serverUrl)}/wt/world`);
+      const target = deriveWtUrl(serverUrl, opts?.wtUrl, opts?.wtPath);
+      this.transport = new WT(target);
       await this.transport.ready;
       this.reconnectDelay = MIN_RECONNECT_MS;
       this.setStatus("connected");
       void this.readDatagramsLoop();
+      void this.readIncomingStreamsLoop();
       await this.transport.closed;
     } catch {
       this.callbacks.onError?.("WebTransport connection failed");
@@ -89,7 +104,7 @@ class WorldWebTransport implements WorldStreamClient {
       await this.disconnectAsync();
       if (shouldRetry) {
         this.setStatus("reconnecting");
-        this.scheduleReconnect(serverUrl);
+        this.scheduleReconnect(serverUrl, opts);
       } else {
         this.setStatus("disconnected");
       }
@@ -99,27 +114,93 @@ class WorldWebTransport implements WorldStreamClient {
   private async readDatagramsLoop(): Promise<void> {
     if (!this.transport?.datagrams?.readable) return;
     const reader = this.transport.datagrams.readable.getReader();
-    this.reader = reader;
+    this.datagramReader = reader;
     const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!value) continue;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        try {
+          this.dispatchRawTick(decoder.decode(value));
+        } catch {
+          // Ignore malformed messages
+        }
+      }
+    } catch {
+      // Ignore transport read errors during reconnect/close
+    }
+  }
+
+  private async readIncomingStreamsLoop(): Promise<void> {
+    if (!this.transport?.incomingUnidirectionalStreams) return;
+
+    const reader = this.transport.incomingUnidirectionalStreams.getReader();
+    this.incomingStreamReader = reader;
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        void this.readSingleIncomingStream(value);
+      }
+    } catch {
+      // Ignore transport read errors during reconnect/close
+    }
+  }
+
+  private async readSingleIncomingStream(stream: ReadableStream<Uint8Array>): Promise<void> {
+    const decoder = new TextDecoder();
+    const reader = stream.getReader();
+    this.activeStreamReaders.add(reader);
+    let raw = "";
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        raw += decoder.decode(value, { stream: true });
+      }
+      raw += decoder.decode();
+      if (raw.length > 0) {
+        this.dispatchRawTick(raw);
+      }
+    } catch {
+      // Ignore malformed/aborted stream frames
+    } finally {
+      this.activeStreamReaders.delete(reader);
       try {
-        const raw = decoder.decode(value);
-        this.callbacks.onRawMessage?.(raw);
-        this.callbacks.onTick?.(JSON.parse(raw) as TickEvent);
+        await reader.cancel();
       } catch {
-        // Ignore malformed messages
+        // Ignore cancel errors on closed streams
       }
     }
   }
 
+  private dispatchRawTick(raw: string): void {
+    this.callbacks.onRawMessage?.(raw);
+    this.callbacks.onTick?.(JSON.parse(raw) as TickEvent);
+  }
+
   private async disconnectAsync(): Promise<void> {
     try {
-      await this.reader?.cancel();
+      await this.datagramReader?.cancel();
     } catch { /* ignore */ }
-    this.reader = null;
+    this.datagramReader = null;
+    try {
+      await this.incomingStreamReader?.cancel();
+    } catch { /* ignore */ }
+    this.incomingStreamReader = null;
+    for (const reader of this.activeStreamReaders) {
+      try {
+        await reader.cancel();
+      } catch {
+        // Ignore cancel errors on closing transport
+      }
+    }
+    this.activeStreamReaders.clear();
     try {
       await this.transport?.close?.();
     } catch { /* ignore */ }
@@ -131,9 +212,12 @@ class WorldWebTransport implements WorldStreamClient {
     this.callbacks.onStatusChange?.(status);
   }
 
-  private scheduleReconnect(serverUrl: string): void {
+  private scheduleReconnect(
+    serverUrl: string,
+    opts?: { wtUrl?: string | null; wtPath?: string | null },
+  ): void {
     this.reconnectTimer = setTimeout(() => {
-      this.connect(serverUrl);
+      this.connect(serverUrl, opts);
     }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_MS);
   }

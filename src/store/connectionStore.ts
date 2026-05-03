@@ -141,11 +141,18 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     }
 
     // 1. Test REST connection by fetching version
+    let wtUrl: string | null = null;
+    let wtPath: string | null = null;
     try {
       client.baseUrl = serverUrl;
       const ver = await client.getVersion();
+      wtUrl = ver.webtransport?.url ?? null;
+      wtPath = ver.webtransport?.path ?? null;
       set({ serverVersion: ver.version, retryCount: 0 });
       log.addConsole("success", `Server v${ver.version} found`);
+      if (ver.webtransport?.enabled === false) {
+        log.addConsole("warning", "Server reports WebTransport disabled");
+      }
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err);
       const friendly = humanizeError(raw);
@@ -224,7 +231,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       },
     });
 
-    worldWs.connect(serverUrl);
+    worldWs.connect(serverUrl, { wtUrl, wtPath });
 
     set({ connected: true, connecting: false, retryCount: 0 });
     log.addConsole("success", "Connected to EarthLink server");

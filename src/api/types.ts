@@ -369,4 +369,9 @@ export interface SimulationControl {
 
 export interface ServerVersion {
   version: string;
+  webtransport?: {
+    enabled: boolean;
+    url: string | null;
+    path: string;
+  };
 }
