@@ -180,11 +180,13 @@ export default function Explorer() {
             {rotation && (
               <div className="px-3 mt-1">
                 <Row icon={<Clock size={11} />} label="GMST" value={`${rotation.gmst_deg.toFixed(2)}°`} />
-                <Row
-                  icon={<Sun size={11} />}
-                  label="Equation of Time"
-                  value={`${rotation.equation_of_time_min >= 0 ? "+" : ""}${rotation.equation_of_time_min.toFixed(2)} min`}
-                />
+                {rotation.equation_of_time_min != null && (
+                  <Row
+                    icon={<Sun size={11} />}
+                    label="Equation of Time"
+                    value={`${rotation.equation_of_time_min >= 0 ? "+" : ""}${rotation.equation_of_time_min.toFixed(2)} min`}
+                  />
+                )}
               </div>
             )}
 
@@ -260,21 +262,25 @@ export default function Explorer() {
             </div>
 
             {/* Lunar — global, same everywhere on Earth at this instant */}
-            {rotation && (
+            {rotation?.moon_phase_name && (
               <>
                 <Section label="Lunar" />
                 <div className="px-3">
                   <Row icon={<Moon size={11} />} label="Phase" value={rotation.moon_phase_name} />
-                  <Row
-                    icon={<Moon size={11} />}
-                    label="Illumination"
-                    value={`${rotation.moon_illumination_pct.toFixed(1)}%`}
-                  />
-                  <Row
-                    icon={<Clock size={11} />}
-                    label="Age"
-                    value={`${rotation.moon_age_days.toFixed(2)} days`}
-                  />
+                  {rotation.moon_illumination_pct != null && (
+                    <Row
+                      icon={<Moon size={11} />}
+                      label="Illumination"
+                      value={`${rotation.moon_illumination_pct.toFixed(1)}%`}
+                    />
+                  )}
+                  {rotation.moon_age_days != null && (
+                    <Row
+                      icon={<Clock size={11} />}
+                      label="Age"
+                      value={`${rotation.moon_age_days.toFixed(2)} days`}
+                    />
+                  )}
                 </div>
               </>
             )}

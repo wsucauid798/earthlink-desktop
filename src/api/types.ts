@@ -298,11 +298,12 @@ export interface EarthRotation {
   sub_solar_lat: number;
   sub_solar_lng: number;
   solar_declination_deg: number;
-  equation_of_time_min: number;
-  moon_phase: number;
-  moon_illumination_pct: number;
-  moon_phase_name: string;
-  moon_age_days: number;
+  // Fields below were added later — may be missing from older server payloads.
+  equation_of_time_min?: number;
+  moon_phase?: number;
+  moon_illumination_pct?: number;
+  moon_phase_name?: string;
+  moon_age_days?: number;
 }
 
 export interface TickEvent {
