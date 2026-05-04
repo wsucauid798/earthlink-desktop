@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { Compass, Orbit, Sun, Activity, Moon, Zap, Wind, Magnet, Globe } from "lucide-react";
+import { Compass, Orbit, Sun, Moon, Zap, Wind, Magnet, Globe } from "lucide-react";
 import { useConnectionStore } from "../../../store/connectionStore";
 import { client } from "../../../api/client";
 import type { EarthRotation, OrbitalData, SolarActivity } from "../../../api/types";
@@ -327,16 +327,6 @@ export default function EarthDashboard() {
         </div>
       </CardSection>
 
-      {/* Live session activity feed */}
-      {(gmstHist.length > 0 || distHist.length > 0) && (
-        <div className="px-3 pb-2">
-          <div className="flex items-center gap-1.5 mb-1 text-[9px] font-semibold uppercase tracking-wider"
-            style={{ color: "var(--el-text-faint)" }}>
-            <Activity size={8} />
-            Live · {gmstHist.length} samples
-          </div>
-        </div>
-      )}
     </>
   );
 }
