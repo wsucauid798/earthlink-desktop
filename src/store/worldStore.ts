@@ -142,6 +142,7 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
           visited_locations: ae.visited_count,
           last_reward: ae.reward,
           goal: ae.goal,
+          travel: ae.travel ?? null,
         };
       }
     }

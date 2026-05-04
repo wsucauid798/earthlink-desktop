@@ -219,6 +219,8 @@ export interface AgentSummary {
   policy: string;
   last_reward: number;
   goal: Record<string, unknown> | null;
+  /** Multi-tick travel state (present while in transit). */
+  travel?: AgentTravel | null;
 }
 
 export interface AgentDetail extends AgentSummary {
@@ -275,6 +277,18 @@ export interface SolarActivity {
 
 // --- Tick Event (WebSocket) ---
 
+/** Multi-tick travel state — present on agent events while in transit. */
+export interface AgentTravel {
+  from_id: number;
+  to_id: number;
+  from_lat: number;
+  from_lng: number;
+  to_lat: number;
+  to_lng: number;
+  total_ticks: number;
+  remaining_ticks: number;
+}
+
 export interface AgentEvent {
   agent_id: string;
   from_location_id: number;
@@ -291,6 +305,7 @@ export interface AgentEvent {
   moved: boolean;
   distance_km: number;
   goal: Record<string, unknown> | null;
+  travel?: AgentTravel | null;
 }
 
 export interface EarthRotation {

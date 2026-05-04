@@ -606,9 +606,23 @@ export function useEarthMap(options: EarthMapOptions): EarthMapResult {
     const currentIds = new Set<string>();
 
     for (const agent of agents) {
-      const coord: [number, number] | undefined =
-        (agent.lat != null && agent.lng != null) ? [agent.lng, agent.lat] :
-        locationLookup.get(agent.location_id);
+      // Position priority:
+      //   1. Multi-tick travel: lerp(from, to, progress) — agent is in transit
+      //   2. Tick-event lat/lng: server-resolved current location
+      //   3. Location lookup fallback for stale records
+      let coord: [number, number] | undefined;
+      const t = agent.travel;
+      if (t && t.total_ticks > 0) {
+        const progress = Math.max(0, Math.min(1, (t.total_ticks - t.remaining_ticks) / t.total_ticks));
+        coord = [
+          t.from_lng + (t.to_lng - t.from_lng) * progress,
+          t.from_lat + (t.to_lat - t.from_lat) * progress,
+        ];
+      } else if (agent.lat != null && agent.lng != null) {
+        coord = [agent.lng, agent.lat];
+      } else {
+        coord = locationLookup.get(agent.location_id);
+      }
       if (!coord) continue;
       currentIds.add(agent.id);
 
