@@ -59,30 +59,56 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 import { invoke } from "@tauri-apps/api/core";
 
-const DEFAULT_SERVER_URL = "http://localhost:8000";
+/**
+ * Layered server URL resolution, in order of precedence:
+ *   1. User override   — ~/.earthlink/config.json (written by Connect to Server dialog)
+ *   2. Bundled default — resources/default-config.json (ships with the release)
+ *   3. Hard fallback   — http://localhost:8000 (dev / unconfigured build)
+ *
+ * The bundled default is what makes a fresh install on a new machine "just work":
+ * the dev's URL travels with the binary instead of relying on per-user localStorage.
+ */
+const HARD_FALLBACK_URL = "http://localhost:8000";
 
-/** Load server URL synchronously from localStorage (fast), then async from disk config. */
+/** Sync initial value — gets overwritten async once disk + bundle are read. */
 function loadServerUrlSync(): string {
   try {
-    return localStorage.getItem("earthlink_server_url") || DEFAULT_SERVER_URL;
+    return localStorage.getItem("earthlink_server_url") || HARD_FALLBACK_URL;
   } catch {
-    return DEFAULT_SERVER_URL;
+    return HARD_FALLBACK_URL;
   }
 }
 
-/** Load config from ~/.earthlink/config.json and update the store + localStorage. */
-async function loadConfigFromDisk(): Promise<void> {
+function readServerUrl(rawJson: string): string | null {
   try {
-    const raw = await invoke<string>("load_config");
-    const config = JSON.parse(raw);
-    if (config.serverUrl) {
-      localStorage.setItem("earthlink_server_url", config.serverUrl);
-      useConnectionStore.setState({ serverUrl: config.serverUrl });
-    }
-  } catch { /* first run — no config yet */ }
+    const cfg = JSON.parse(rawJson);
+    return typeof cfg.serverUrl === "string" && cfg.serverUrl ? cfg.serverUrl : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Save server URL to both localStorage and ~/.earthlink/config.json. */
+/** Resolve the URL through the layered config and update the store + cache. */
+async function loadConfigFromDisk(): Promise<void> {
+  let resolved: string | null = null;
+
+  try {
+    resolved = readServerUrl(await invoke<string>("load_config"));
+  } catch { /* no user config yet */ }
+
+  if (!resolved) {
+    try {
+      resolved = readServerUrl(await invoke<string>("load_bundled_config"));
+    } catch { /* bundled resource not available (e.g. running outside Tauri) */ }
+  }
+
+  if (resolved) {
+    try { localStorage.setItem("earthlink_server_url", resolved); } catch { /* ignore */ }
+    useConnectionStore.setState({ serverUrl: resolved });
+  }
+}
+
+/** Save server URL to the user config (and mirror to localStorage for fast sync reads). */
 async function saveServerUrl(url: string): Promise<void> {
   try { localStorage.setItem("earthlink_server_url", url); } catch { /* ignore */ }
   try {
@@ -93,7 +119,6 @@ async function saveServerUrl(url: string): Promise<void> {
   } catch { /* ignore */ }
 }
 
-// Kick off async disk load on module init
 setTimeout(() => loadConfigFromDisk(), 0);
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
