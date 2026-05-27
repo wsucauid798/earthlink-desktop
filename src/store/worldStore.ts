@@ -18,7 +18,9 @@ import type {
   EarthProxyStatus,
   EarthRotation,
   GeographyStats,
+  OrbitalData,
   RefreshStatus,
+  SolarActivity,
   TickEvent,
   WeatherSummary,
   WorldState,
@@ -54,6 +56,8 @@ export interface WorldStoreState {
 
   // Earth rotation (updated every tick from server)
   rotation: EarthRotation | null;
+  orbital: OrbitalData | null;
+  solarActivity: SolarActivity | null;
 
   // Tick
   tickCount: number;
@@ -85,6 +89,8 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
   earthProxy: null,
   refresh: null,
   rotation: null,
+  orbital: null,
+  solarActivity: null,
   agents: [],
   tickCount: 0,
   lastAgentEvents: [],
@@ -151,6 +157,8 @@ export const useWorldStore = create<WorldStoreState>((set, get) => ({
       time: event.time,
       tickCount: event.tick,
       rotation: event.rotation ?? get().rotation,
+      orbital: event.orbital ?? get().orbital,
+      solarActivity: event.solar_activity ?? get().solarActivity,
       lastAgentEvents: event.agent_events,
       earthProxyResolves: event.earth_proxy_resolves ?? get().earthProxyResolves,
       dataFeedsUpdated: event.data_feeds_updated,

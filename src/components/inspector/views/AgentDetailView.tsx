@@ -5,7 +5,7 @@
 import { useState } from "react";
 import {
   Bot, X, MessageCircle, BarChart3, Target, Navigation, Brain,
-  Send, Loader, ListChecks, FileText, Gauge, Shield, Route,
+  Send, Loader, ListChecks, FileText, Gauge, Route,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useViewportStore } from "../../../store/viewportStore";
@@ -90,28 +90,6 @@ function AgentExplorationSection({ agent }: { agent: AgentDetail }) {
           <SparklineChart data={topScores} width={200} height={24} color="var(--el-warning)" />
         </div>
       )}
-    </CardSection>
-  );
-}
-
-/* ---------- Placeholder sections ---------- */
-
-function AgentBeliefSection() {
-  return (
-    <CardSection title="Belief Confidence" icon={<Shield size={10} />} defaultOpen={false}>
-      <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
-        Belief confidence tracking is pending server-side support.
-      </div>
-    </CardSection>
-  );
-}
-
-function AgentReadinessSection() {
-  return (
-    <CardSection title="Readiness" icon={<Gauge size={10} />} defaultOpen={false}>
-      <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
-        Readiness metrics are pending server-side support.
-      </div>
     </CardSection>
   );
 }
@@ -256,8 +234,6 @@ export default function AgentDetailView({
 
       <AgentUtilitySection agentId={agent.id} />
       <AgentExplorationSection agent={agent} />
-      <AgentBeliefSection />
-      <AgentReadinessSection />
     </>
   );
 }

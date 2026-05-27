@@ -64,6 +64,7 @@ class WorldWebTransport implements WorldStreamClient {
   }
 
   connect(serverUrl: string, opts?: { wtUrl?: string | null; wtPath?: string | null }): void {
+    if (this._status === "connecting" || this._status === "connected") return;
     this.intentionalClose = false;
     this.clearReconnectTimer();
     this.setStatus("connecting");
@@ -91,12 +92,13 @@ class WorldWebTransport implements WorldStreamClient {
     try {
       const target = deriveWtUrl(serverUrl, opts?.wtUrl, opts?.wtPath);
       this.transport = new WT(target);
-      await this.transport.ready;
+      const transport = this.transport;
+      await transport.ready;
       this.reconnectDelay = MIN_RECONNECT_MS;
       this.setStatus("connected");
-      void this.readDatagramsLoop();
-      void this.readIncomingStreamsLoop();
-      await this.transport.closed;
+      void this.readDatagramsLoop(transport);
+      void this.readIncomingStreamsLoop(transport);
+      await transport.closed;
     } catch {
       this.callbacks.onError?.("WebTransport connection failed");
     } finally {
@@ -111,14 +113,16 @@ class WorldWebTransport implements WorldStreamClient {
     }
   }
 
-  private async readDatagramsLoop(): Promise<void> {
-    if (!this.transport?.datagrams?.readable) return;
-    const reader = this.transport.datagrams.readable.getReader();
-    this.datagramReader = reader;
+  private async readDatagramsLoop(transport: any): Promise<void> {
+    if (!transport?.datagrams?.readable || this.datagramReader) return;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const decoder = new TextDecoder();
     try {
+      const streamReader = transport.datagrams.readable.getReader();
+      reader = streamReader;
+      this.datagramReader = streamReader;
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await streamReader.read();
         if (done) break;
         if (!value) continue;
         try {
@@ -129,36 +133,58 @@ class WorldWebTransport implements WorldStreamClient {
       }
     } catch {
       // Ignore transport read errors during reconnect/close
+    } finally {
+      if (reader && this.datagramReader === reader) {
+        this.datagramReader = null;
+      }
+      try {
+        reader?.releaseLock();
+      } catch {
+        // Ignore release errors on closed streams
+      }
     }
   }
 
-  private async readIncomingStreamsLoop(): Promise<void> {
-    if (!this.transport?.incomingUnidirectionalStreams) return;
+  private async readIncomingStreamsLoop(transport: any): Promise<void> {
+    if (!transport?.incomingUnidirectionalStreams || this.incomingStreamReader) return;
 
-    const reader = this.transport.incomingUnidirectionalStreams.getReader();
-    this.incomingStreamReader = reader;
+    let reader: ReadableStreamDefaultReader<ReadableStream<Uint8Array>> | null = null;
 
     try {
+      const streamReader = transport.incomingUnidirectionalStreams.getReader();
+      reader = streamReader;
+      this.incomingStreamReader = streamReader;
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await streamReader.read();
         if (done) break;
         if (!value) continue;
         void this.readSingleIncomingStream(value);
       }
     } catch {
       // Ignore transport read errors during reconnect/close
+    } finally {
+      if (reader && this.incomingStreamReader === reader) {
+        this.incomingStreamReader = null;
+      }
+      try {
+        reader?.releaseLock();
+      } catch {
+        // Ignore release errors on closed streams
+      }
     }
   }
 
   private async readSingleIncomingStream(stream: ReadableStream<Uint8Array>): Promise<void> {
     const decoder = new TextDecoder();
-    const reader = stream.getReader();
-    this.activeStreamReaders.add(reader);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     let raw = "";
 
     try {
+      const streamReader = stream.getReader();
+      reader = streamReader;
+      this.activeStreamReaders.add(streamReader);
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await streamReader.read();
         if (done) break;
         if (!value) continue;
         raw += decoder.decode(value, { stream: true });
@@ -170,11 +196,13 @@ class WorldWebTransport implements WorldStreamClient {
     } catch {
       // Ignore malformed/aborted stream frames
     } finally {
-      this.activeStreamReaders.delete(reader);
+      if (reader) {
+        this.activeStreamReaders.delete(reader);
+      }
       try {
-        await reader.cancel();
+        reader?.releaseLock();
       } catch {
-        // Ignore cancel errors on closed streams
+        // Ignore release errors on closed streams
       }
     }
   }

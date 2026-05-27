@@ -16,7 +16,9 @@
         "width": 1400,
         "height": 900,
         "minWidth": 800,
-        "minHeight": 500
+        "minHeight": 500,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu-compositing --ignore-gpu-blocklist --enable-unsafe-swiftshader",
+        "dataDirectory": "webview-gpu-safe"
       }
     ],
     "security": {

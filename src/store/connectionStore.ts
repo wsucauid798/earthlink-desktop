@@ -127,8 +127,8 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   connect: async () => {
-    const { serverUrl, connected } = get();
-    if (connected) return;
+    const { serverUrl, connected, connecting } = get();
+    if (connected || connecting) return;
 
     set({ connecting: true, error: null, retriesExhausted: false, retryCancelled: false });
     const log = useLogStore.getState();

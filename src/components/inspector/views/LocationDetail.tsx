@@ -4,7 +4,7 @@
 
 import {
   MapPin, X, Navigation, Cloud, Sun, Sunrise, Sunset, Compass,
-  Mountain, Magnet, Waves, Droplets, Eye as EyeIcon, Link, ArrowRight, Zap,
+  Mountain, Magnet, Waves, Droplets, Eye as EyeIcon, Link, ArrowRight,
 } from "lucide-react";
 import { useSelectionStore } from "../../../store/selectionStore";
 import type {
@@ -259,13 +259,6 @@ export default function LocationDetail({
       )}
 
       <AgentsAtLocation locationId={loc.id} />
-
-      {/* Events placeholder */}
-      <CardSection title="Events" icon={<Zap size={10} />} defaultOpen={false}>
-        <div className="text-[10px] py-1" style={{ color: "var(--el-text-faint)" }}>
-          Location events will appear here as world mechanics develop.
-        </div>
-      </CardSection>
     </>
   );
 }

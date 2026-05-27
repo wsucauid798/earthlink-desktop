@@ -325,6 +325,8 @@ export interface TickEvent {
   tick: number;
   time: WorldTime;
   rotation: EarthRotation;
+  orbital?: OrbitalData | null;
+  solar_activity?: SolarActivity | null;
   weather_updated: boolean;
   wind_updated: boolean;
   atmosphere_updated: boolean;
