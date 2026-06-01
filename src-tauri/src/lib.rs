@@ -43,6 +43,7 @@ fn load_bundled_config(app: tauri::AppHandle) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             load_config,

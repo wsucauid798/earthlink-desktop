@@ -5,6 +5,13 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://earthlink.yuxilabs.com/*" },
+        { "url": "http://localhost:8000/*" }
+      ]
+    }
   ]
 }

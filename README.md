@@ -58,7 +58,9 @@ earthlink-desktop/
 
 - [Node.js](https://nodejs.org/) v18+
 - [Rust](https://www.rust-lang.org/tools/install) toolchain (required by Tauri)
-- EarthLink backend server running on `http://localhost:8000`
+- Access to an EarthLink backend server. By default the app connects to the
+  hosted production server (`https://earthlink.yuxilabs.com`); point it at a
+  local server via File → Connect to Server if you are running one.
 
 For platform-specific Tauri prerequisites, see the [Tauri v2 prerequisites guide](https://v2.tauri.app/start/prerequisites/).
 
@@ -72,7 +74,7 @@ npm install
 npx tauri dev
 ```
 
-The Vite dev server runs on `http://localhost:1420` with hot module reloading. The Tauri window opens automatically and connects to the backend at `http://localhost:8000`.
+The Vite dev server runs on `http://localhost:1420` with hot module reloading. The Tauri window opens automatically and connects to the server resolved from config (see [Configuration](#configuration)) — the hosted production server by default.
 
 ## Building for Production
 
@@ -87,10 +89,15 @@ This compiles the TypeScript frontend with Vite, compiles the Rust backend, and 
 
 | Setting | Default | Location |
 |---------|---------|----------|
-| Backend server URL | `http://localhost:8000` | Configurable via File → Connect to Server |
-| WebSocket endpoint | `ws://localhost:8000/ws/world` | Derived from server URL |
+| Backend server URL | `https://earthlink.yuxilabs.com` | See URL resolution below |
 | Dev server port | `1420` | `vite.config.ts` |
 | Window size | 1400 x 900 (min 800 x 500) | `src-tauri/tauri.conf.json` |
+
+The backend URL is resolved in order of precedence (see `src/store/connectionStore.ts`):
+
+1. **User override** — `~/.earthlink/config.json`, written by File → Connect to Server
+2. **Bundled default** — `src-tauri/resources/default-config.json` (ships with the release; currently `https://earthlink.yuxilabs.com`)
+3. **Hard fallback** — `http://localhost:8000`, only when neither config is present
 
 ## Architecture
 

@@ -5,6 +5,11 @@
  * is responsible for catching and reporting errors.
  */
 
+// Routes requests through the Tauri (Rust) HTTP stack instead of the webview's
+// fetch, so they are not subject to browser CORS enforcement. Allowed hosts are
+// scoped in src-tauri/capabilities/default.json.
+import { fetch } from "@tauri-apps/plugin-http";
+
 import type {
   AgentAnswer,
   AgentDetail,
