@@ -32,6 +32,13 @@ src-tauri/target/
 src-tauri/WixTools/
 src-tauri/Frameworks/
 
+# Tauri updater signing keys — NEVER commit a private key. The real key lives
+# outside the repo (~/.tauri/) and in CI secrets; this is a safety net in case
+# one is ever generated here. The .pub is public (it's also embedded in
+# tauri.conf.json), so only the private key is ignored.
+*.key
+!*.pub
+
 # Env files
 .env
 .env.*

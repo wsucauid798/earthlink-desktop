@@ -29,11 +29,19 @@ import ViewportTabs from "./components/ViewportTabs";
 import ViewportContent from "./components/ViewportContent";
 import BottomPanel from "./components/BottomPanel";
 import StatusBar from "./components/StatusBar";
+import { checkForUpdates } from "./lib/updater";
+import { initLogging } from "./lib/logging";
 
 function App() {
+  /* Forward plugin log records (Rust + JS) into devtools; logfile lives in $APPLOG */
+  useEffect(() => { initLogging(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* Auto-connect on boot */
   const autoConnect = useConnectionStore((s) => s.autoConnect);
   useEffect(() => { autoConnect(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Check GitHub Releases for a newer signed build on launch (no-op in browser dev) */
+  useEffect(() => { checkForUpdates(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Theme */
   const { mode: themeMode, setMode: setThemeMode } = useTheme();

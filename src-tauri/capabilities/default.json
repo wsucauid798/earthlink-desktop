@@ -6,6 +6,19 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "window-state:default",
+    "updater:default",
+    "process:default",
+    "dialog:default",
+    "log:default",
+    "os:default",
+    "notification:default",
+    "fs:allow-appconfig-read-recursive",
+    "fs:allow-appconfig-write-recursive",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-applog-read-recursive",
+    "fs:allow-applog-write-recursive",
     {
       "identifier": "http:default",
       "allow": [

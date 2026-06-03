@@ -1,0 +1,56 @@
+name: Release (desktop)
+
+# Tag a release (e.g. `git tag v0.1.1 && git push origin v0.1.1`) to build a
+# signed Windows bundle, publish it to a GitHub Release, and emit `latest.json`
+# (the updater manifest the app polls). Bump `version` in src-tauri/tauri.conf.json
+# BEFORE tagging — the updater compares that version, not the tag.
+#
+# Required repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           -> contents of ~/.tauri/earthlink-desktop.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  -> the key's password ("" if none)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release + upload assets
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install front-end dependencies
+        run: npm ci
+
+      - name: Build, sign, and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "EarthLink Desktop ${{ github.ref_name }}"
+          releaseBody: "Automated build. See assets to download; existing installs update in-app."
+          # Draft so you can review before it goes live. NOTE: the updater
+          # endpoint (releases/latest/download/latest.json) only resolves once
+          # the release is PUBLISHED and non-prerelease — publish to ship it.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
